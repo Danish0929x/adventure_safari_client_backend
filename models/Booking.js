@@ -69,7 +69,11 @@ const guestSchema = new mongoose.Schema(
     travelInsurance: {
       type: String,
       trim: true,
-    }
+    },
+    previousPassports: [{
+      url: String,
+      replacedAt: { type: Date, default: Date.now }
+    }]
   },
   {
     timestamps: true,

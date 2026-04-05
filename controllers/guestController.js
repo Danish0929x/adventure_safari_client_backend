@@ -83,14 +83,19 @@ exports.uploadPassport = async (req, res) => {
 
     const { booking } = validation;
 
-    // Delete old passport file if exists
+    // Archive old passport if exists (keep for records)
     const oldPassport = booking.guests[guestIndex].passport;
-    if (oldPassport) {
-      console.log('Deleting old passport:', oldPassport);
-      const publicId = extractPublicId(oldPassport);
-      if (publicId) {
-        await deleteCloudinaryFile(publicId);
+    const isReupload = oldPassport && oldPassport.trim() !== "";
+
+    if (isReupload) {
+      console.log('Archiving old passport:', oldPassport);
+      if (!booking.guests[guestIndex].previousPassports) {
+        booking.guests[guestIndex].previousPassports = [];
       }
+      booking.guests[guestIndex].previousPassports.push({
+        url: oldPassport,
+        replacedAt: new Date()
+      });
     }
 
     // Update passport URL
@@ -362,19 +367,71 @@ exports.updateAcknowledge = async (req, res) => {
     }
 
     // Update acknowledgment status
-    booking.acknowledged = acknowledged;
+    booking.acknowledge = acknowledged;
     await booking.save();
 
     res.status(200).json({
       message: "Acknowledgment status updated successfully",
       booking: {
         _id: booking._id,
-        acknowledged: booking.acknowledged
+        acknowledge: booking.acknowledge
       }
     });
   } catch (error) {
     console.error("Update acknowledge error:", error);
     res.status(500).json({ message: "Server error while updating acknowledgment status" });
+  }
+};
+
+// Add guests to an existing booking
+exports.addGuests = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { guests } = req.body;
+    const userEmail = req.user?.email || req.body?.email;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "User email not found in request" });
+    }
+
+    if (!guests || !Array.isArray(guests) || guests.length === 0) {
+      return res.status(400).json({ message: "At least one guest is required" });
+    }
+
+    for (const guest of guests) {
+      if (!guest.name || !guest.age) {
+        return res.status(400).json({ message: "Each guest must have a name and age" });
+      }
+      if (guest.age < 1 || guest.age > 120) {
+        return res.status(400).json({ message: "Guest age must be between 1 and 120" });
+      }
+    }
+
+    const user = await User.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const booking = await Booking.findOne({ _id: bookingId, userId: user._id });
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    const newGuests = guests.map(g => ({ name: g.name.trim(), age: Number(g.age) }));
+    booking.guests.push(...newGuests);
+    await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
+    res.status(200).json({
+      message: `${newGuests.length} guest(s) added successfully`,
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error("Add guests error:", error);
+    res.status(500).json({ message: "Server error while adding guests" });
   }
 };
 

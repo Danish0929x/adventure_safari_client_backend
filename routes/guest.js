@@ -35,6 +35,9 @@ router.put("/acknowledge/:bookingId",
   guestController.updateAcknowledge
 );
 
+// 5. ADD GUESTS TO EXISTING BOOKING
+router.post("/add-guests/:bookingId", auth, guestController.addGuests);
+
 // Additional utility routes
 // Get specific guest information
 router.get("/get-guest/:bookingId/:guestIndex", auth, guestController.getGuest);
