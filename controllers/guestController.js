@@ -83,10 +83,18 @@ exports.uploadPassport = async (req, res) => {
 
     const { booking } = validation;
 
-    // Archive old passport if exists (keep for records)
+    // Check upload limit (max 2 uploads: 1 original + 1 re-upload)
     const oldPassport = booking.guests[guestIndex].passport;
     const isReupload = oldPassport && oldPassport.trim() !== "";
+    const previousPassports = booking.guests[guestIndex].previousPassports || [];
 
+    if (isReupload && previousPassports.length >= 1) {
+      return res.status(400).json({
+        message: "Passport upload limit reached. You can only update your passport once."
+      });
+    }
+
+    // Archive old passport if exists (keep for records)
     if (isReupload) {
       console.log('Archiving old passport:', oldPassport);
       if (!booking.guests[guestIndex].previousPassports) {
@@ -104,10 +112,15 @@ exports.uploadPassport = async (req, res) => {
 
     console.log('Passport uploaded successfully:', req.fileUrl);
 
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
     res.status(200).json({
       message: "Passport uploaded successfully",
       passportUrl: req.fileUrl,
-      guest: booking.guests[guestIndex]
+      guest: booking.guests[guestIndex],
+      booking: updatedBooking
     });
   } catch (error) {
     console.error("Upload passport error:", error);
@@ -115,13 +128,61 @@ exports.uploadPassport = async (req, res) => {
   }
 };
 
-// Upload multiple documents (Medical Certificate & Travel Insurance)
+// Upload travel insurance document
 exports.uploadDocuments = async (req, res) => {
   try {
     const { bookingId, guestIndex } = req.params;
     const userEmail = req.user?.email || req.body?.email;
-    
-    console.log('Upload documents params:', { bookingId, guestIndex, userEmail });
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "User email not found in request" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No travel insurance file uploaded" });
+    }
+
+    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    if (validation.error) {
+      return res.status(validation.status).json({ message: validation.error });
+    }
+
+    const { booking } = validation;
+
+    // Delete old insurance from Cloudinary if exists
+    const oldInsurance = booking.guests[guestIndex].travelInsurance;
+    if (oldInsurance) {
+      const publicId = extractPublicId(oldInsurance);
+      if (publicId) {
+        await deleteCloudinaryFile(publicId);
+      }
+    }
+
+    booking.guests[guestIndex].travelInsurance = req.fileUrl;
+    await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
+    res.status(200).json({
+      message: "Travel insurance uploaded successfully",
+      travelInsuranceUrl: req.fileUrl,
+      guest: booking.guests[guestIndex],
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error("Upload documents error:", error);
+    res.status(500).json({ message: "Server error while uploading document" });
+  }
+};
+
+// Update medical appointment date / mark as completed
+exports.updateMedicalAppointment = async (req, res) => {
+  try {
+    const { bookingId, guestIndex } = req.params;
+    const { medicalAppointmentDate, medicalAppointmentCompleted } = req.body;
+    const userEmail = req.user?.email || req.body?.email;
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
@@ -133,51 +194,31 @@ exports.uploadDocuments = async (req, res) => {
     }
 
     const { booking } = validation;
-    const uploadedDocuments = {};
 
-    // Process each uploaded file
-    if (req.uploadedFiles) {
-      // Handle medical certificate
-      if (req.uploadedFiles.medicalCertificate) {
-        const oldCertificate = booking.guests[guestIndex].medicalCertificate;
-        if (oldCertificate) {
-          const publicId = extractPublicId(oldCertificate);
-          if (publicId) {
-            await deleteCloudinaryFile(publicId);
-          }
-        }
-        booking.guests[guestIndex].medicalCertificate = req.uploadedFiles.medicalCertificate.url;
-        uploadedDocuments.medicalCertificate = req.uploadedFiles.medicalCertificate.url;
-      }
-
-      // Handle travel insurance
-      if (req.uploadedFiles.travelInsurance) {
-        const oldInsurance = booking.guests[guestIndex].travelInsurance;
-        if (oldInsurance) {
-          const publicId = extractPublicId(oldInsurance);
-          if (publicId) {
-            await deleteCloudinaryFile(publicId);
-          }
-        }
-        booking.guests[guestIndex].travelInsurance = req.uploadedFiles.travelInsurance.url;
-        uploadedDocuments.travelInsurance = req.uploadedFiles.travelInsurance.url;
-      }
+    if (medicalAppointmentDate !== undefined) {
+      booking.guests[guestIndex].medicalAppointmentDate = medicalAppointmentDate;
+      // Auto-mark as completed when a date is set
+      booking.guests[guestIndex].medicalAppointmentCompleted = true;
     }
 
-    if (Object.keys(uploadedDocuments).length === 0) {
-      return res.status(400).json({ message: "No valid documents uploaded" });
+    if (medicalAppointmentCompleted !== undefined) {
+      booking.guests[guestIndex].medicalAppointmentCompleted = medicalAppointmentCompleted;
     }
 
     await booking.save();
 
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
     res.status(200).json({
-      message: "Documents uploaded successfully",
-      uploadedDocuments,
-      guest: booking.guests[guestIndex]
+      message: "Medical appointment updated successfully",
+      guest: booking.guests[guestIndex],
+      booking: updatedBooking
     });
   } catch (error) {
-    console.error("Upload documents error:", error);
-    res.status(500).json({ message: "Server error while uploading documents" });
+    console.error("Update medical appointment error:", error);
+    res.status(500).json({ message: "Server error while updating medical appointment" });
   }
 };
 
@@ -256,9 +297,14 @@ exports.updateGuestForm = async (req, res) => {
 
     await booking.save();
 
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
     res.status(200).json({
       message: "Guest information updated successfully",
-      guest: booking.guests[guestIndex]
+      guest: booking.guests[guestIndex],
+      booking: updatedBooking
     });
   } catch (error) {
     console.error("Update guest form error:", error);
@@ -370,12 +416,13 @@ exports.updateAcknowledge = async (req, res) => {
     booking.acknowledge = acknowledged;
     await booking.save();
 
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
     res.status(200).json({
       message: "Acknowledgment status updated successfully",
-      booking: {
-        _id: booking._id,
-        acknowledge: booking.acknowledge
-      }
+      booking: updatedBooking
     });
   } catch (error) {
     console.error("Update acknowledge error:", error);
@@ -417,8 +464,14 @@ exports.addGuests = async (req, res) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const newGuests = guests.map(g => ({ name: g.name.trim(), age: Number(g.age) }));
+    const newGuests = guests.map(g => ({ name: g.name.trim(), age: Number(g.age), registrationPayment: false }));
     booking.guests.push(...newGuests);
+
+    // Update registration payment status since new unpaid guests were added
+    if (booking.registrationPaymentDetails && booking.registrationPaymentDetails.status === 'paid') {
+      booking.registrationPaymentDetails.status = 'partial';
+    }
+
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
@@ -463,9 +516,14 @@ exports.updateRegistrationPayment = async (req, res) => {
     booking.guests[guestIndex].registrationPayment = registrationPayment;
     await booking.save();
 
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
     res.status(200).json({
       message: "Registration payment status updated successfully",
-      guest: booking.guests[guestIndex]
+      guest: booking.guests[guestIndex],
+      booking: updatedBooking
     });
   } catch (error) {
     console.error("Update registration payment error:", error);

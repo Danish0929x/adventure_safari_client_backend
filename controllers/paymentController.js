@@ -70,38 +70,68 @@ const capturePayPalOrder = async (req, res) => {
     const capture = await client().execute(request);
 
     if (capture.result.status === 'COMPLETED') {
-      // Update booking with payment information
       const booking = await Booking.findById(bookingId);
       if (booking) {
-        // Update booking payment status and details
-        booking.bookingStatus = 'confirmed'; 
-        
-        // Store payment details at booking level (not in guests)
-        booking.registrationPaymentDetails = {
+        booking.bookingStatus = 'confirmed';
+
+        const capturedAmount = parseFloat(capture.result.purchase_units[0].payments.captures[0].amount.value);
+        const capturedCurrency = capture.result.purchase_units[0].payments.captures[0].amount.currency_code;
+
+        // Initialize registrationPaymentDetails if not exists
+        if (!booking.registrationPaymentDetails) {
+          booking.registrationPaymentDetails = { transactions: [], totalPaid: 0, status: 'pending' };
+        }
+        if (!booking.registrationPaymentDetails.transactions) {
+          booking.registrationPaymentDetails.transactions = [];
+        }
+
+        // Count unpaid guests being paid in this transaction
+        const unpaidGuests = booking.guests.filter(g => !g.registrationPayment);
+        const guestsPaidNow = unpaidGuests.length;
+
+        // Add this transaction
+        booking.registrationPaymentDetails.transactions.push({
           transactionId: capture.result.id,
           paymentDate: new Date(),
-          amount: parseFloat(capture.result.purchase_units[0].payments.captures[0].amount.value),
-          currency: capture.result.purchase_units[0].payments.captures[0].amount.currency_code,
+          amount: capturedAmount,
+          currency: capturedCurrency,
           payerEmail: capture.result.payer.email_address,
           payerName: `${capture.result.payer.name.given_name} ${capture.result.payer.name.surname}`,
-          status: 'paid'
-        };
-
-        // Update registration payment status for all guests
-        booking.guests.forEach(guest => {
-          guest.registrationPayment = true;
+          guestsPaid: guestsPaidNow
         });
 
-        await booking.save();
-      }
+        // Update total paid
+        booking.registrationPaymentDetails.totalPaid =
+          (booking.registrationPaymentDetails.totalPaid || 0) + capturedAmount;
 
-      res.json({
-        success: true,
-        message: 'Payment completed successfully',
-        transactionId: capture.result.id,
-        paymentDetails: capture.result,
-        bookingStatus: 'confirmed'
-      });
+        // Mark unpaid guests as paid
+        booking.guests.forEach(guest => {
+          if (!guest.registrationPayment) {
+            guest.registrationPayment = true;
+          }
+        });
+
+        // Update status based on whether all guests are now paid
+        const allPaid = booking.guests.every(g => g.registrationPayment);
+        booking.registrationPaymentDetails.status = allPaid ? 'paid' : 'partial';
+
+        await booking.save();
+
+        const updatedBooking = await Booking.findById(booking._id)
+          .populate('tripId', 'name destination price image')
+          .populate('userId', 'name email');
+
+        res.json({
+          success: true,
+          message: 'Payment completed successfully',
+          transactionId: capture.result.id,
+          paymentDetails: capture.result,
+          bookingStatus: 'confirmed',
+          booking: updatedBooking
+        });
+      } else {
+        res.status(404).json({ success: false, message: 'Booking not found' });
+      }
     } else {
       res.status(400).json({
         success: false,

@@ -61,11 +61,15 @@ const guestSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    // Documents
-    medicalCertificate: {
-      type: String,
-      trim: true,
+    // Medical Appointment
+    medicalAppointmentDate: {
+      type: Date,
     },
+    medicalAppointmentCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    // Documents
     travelInsurance: {
       type: String,
       trim: true,
@@ -73,7 +77,11 @@ const guestSchema = new mongoose.Schema(
     previousPassports: [{
       url: String,
       replacedAt: { type: Date, default: Date.now }
-    }]
+    }],
+    registrationPayment: {
+      type: Boolean,
+      default: false
+    }
   },
   {
     timestamps: true,
@@ -146,15 +154,19 @@ const bookingSchema = new mongoose.Schema(
       default: "pending",
     },
     registrationPaymentDetails: {
-      transactionId: String,
-      paymentDate: Date,
-      amount: Number,
-      currency: String,
-      payerEmail: String,
-      payerName: String,
+      transactions: [{
+        transactionId: String,
+        paymentDate: { type: Date, default: Date.now },
+        amount: Number,
+        currency: String,
+        payerEmail: String,
+        payerName: String,
+        guestsPaid: Number
+      }],
+      totalPaid: { type: Number, default: 0 },
       status: {
         type: String,
-        enum: ["pending", "paid", "refunded"],
+        enum: ["pending", "paid", "partial", "refunded"],
         default: "pending"
       }
     },

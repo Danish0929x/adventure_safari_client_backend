@@ -2,7 +2,7 @@
 const express = require("express");
 const guestController = require("../controllers/guestController");
 const auth = require("../middleware/auth");
-const { uploadSingleDocument, uploadMultipleDocuments } = require("../middleware/documentUpload");
+const { uploadSingleDocument } = require("../middleware/documentUpload");
 
 const router = express.Router();
 
@@ -13,14 +13,17 @@ router.put("/passport-upload/:bookingId/:guestIndex",
   guestController.uploadPassport
 );
 
-// 2. DOCUMENT UPLOAD ROUTE (Medical Certificate & Travel Insurance)
-router.put("/document-upload/:bookingId/:guestIndex", 
-  auth, 
-  uploadMultipleDocuments([
-    { name: 'medicalCertificate', maxCount: 1 },
-    { name: 'travelInsurance', maxCount: 1 }
-  ]),
+// 2. DOCUMENT UPLOAD ROUTE (Travel Insurance only)
+router.put("/document-upload/:bookingId/:guestIndex",
+  auth,
+  uploadSingleDocument('travelInsurance'),
   guestController.uploadDocuments
+);
+
+// 2b. MEDICAL APPOINTMENT ROUTE
+router.put("/medical-appointment/:bookingId/:guestIndex",
+  auth,
+  guestController.updateMedicalAppointment
 );
 
 // 3. FORM SUBMISSION ROUTE (Phone, Age, Name updates)
