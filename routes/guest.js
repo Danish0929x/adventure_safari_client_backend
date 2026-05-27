@@ -41,6 +41,9 @@ router.put("/acknowledge/:bookingId",
 // 5. ADD GUESTS TO EXISTING BOOKING
 router.post("/add-guests/:bookingId", auth, guestController.addGuests);
 
+// 6. DELETE A GUEST FROM AN EXISTING BOOKING
+router.delete("/delete-guest/:bookingId/:guestIndex", auth, guestController.deleteGuest);
+
 // Additional utility routes
 // Get specific guest information
 router.get("/get-guest/:bookingId/:guestIndex", auth, guestController.getGuest);

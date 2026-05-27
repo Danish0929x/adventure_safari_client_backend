@@ -530,3 +530,42 @@ exports.updateRegistrationPayment = async (req, res) => {
     res.status(500).json({ message: "Server error while updating registration payment status" });
   }
 };
+
+// Delete a guest from an existing booking
+exports.deleteGuest = async (req, res) => {
+  try {
+    const { bookingId, guestIndex } = req.params;
+    const userEmail = req.user?.email || req.body?.email;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "User email not found in request" });
+    }
+
+    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    if (validation.error) {
+      return res.status(validation.status).json({ message: validation.error });
+    }
+
+    const { booking } = validation;
+
+    // A booking must always have at least one guest
+    if (booking.guests.length <= 1) {
+      return res.status(400).json({ message: "A booking must have at least one traveler" });
+    }
+
+    const [removed] = booking.guests.splice(Number(guestIndex), 1);
+    await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email');
+
+    res.status(200).json({
+      message: `${removed?.name || "Traveler"} removed successfully`,
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error("Delete guest error:", error);
+    res.status(500).json({ message: "Server error while deleting guest" });
+  }
+};

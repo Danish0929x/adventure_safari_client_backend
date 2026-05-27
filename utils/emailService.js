@@ -173,7 +173,67 @@ const sendPasswordResetEmail = async (email, token) => {
   }
 };
 
+const sendInquiryEmail = async ({ name, email, phoneNumber, query }) => {
+  const recipient =
+    process.env.INQUIRY_EMAIL || "gary@adventuresafarinetwork.com";
+
+  const mailOptions = {
+    from: {
+      name: "Adventure Safari Inquiry",
+      address: process.env.EMAIL_USER,
+    },
+    to: recipient,
+    replyTo: email,
+    subject: `New Inquiry from ${name}`,
+    text: `You have received a new inquiry.\n\nName: ${name}\nEmail: ${email}\nPhone: ${phoneNumber}\n\nQuery:\n${query}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; border-radius: 5px 5px 0 0;">
+          <h1 style="margin: 0; color: white;">Adventure Safari Network</h1>
+          <p style="color: rgba(255,255,255,0.95); margin: 5px 0 0; font-size: 15px;">New Inquiry Received</p>
+        </div>
+
+        <div style="padding: 25px; background: #fff; border-radius: 0 0 5px 5px; border: 1px solid #e9ecef;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 15px;">
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold; width: 130px;">Name</td>
+              <td style="padding: 8px 0;">${name}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold;">Email</td>
+              <td style="padding: 8px 0;"><a href="mailto:${email}" style="color: #3498db;">${email}</a></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold;">Phone</td>
+              <td style="padding: 8px 0;">${phoneNumber}</td>
+            </tr>
+          </table>
+
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p style="font-weight: bold; margin-bottom: 8px;">Query</p>
+            <p style="font-size: 15px; line-height: 1.6; white-space: pre-wrap;">${query}</p>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; text-align: center; font-size: 12px; color: #95a5a6;">
+          <p>© ${new Date().getFullYear()} Adventure Safari Network. All rights reserved.</p>
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Inquiry email sent to ${recipient}:`, info.messageId);
+    return info;
+  } catch (error) {
+    console.error("Error sending inquiry email:", error);
+    throw new Error("Failed to send inquiry email");
+  }
+};
+
 module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
+  sendInquiryEmail,
 };
