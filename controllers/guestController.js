@@ -1,6 +1,7 @@
 // controllers/guestController.js
 const { deleteCloudinaryFile } = require('../middleware/documentUpload');
-const { Booking } = require('../models/Booking');
+const Booking = require('../models/Booking');
+const Guest = require('../models/Guest');
 const User = require('../models/User');
 
 // Helper function to extract Cloudinary public ID from URL
@@ -11,39 +12,42 @@ const extractPublicId = (url) => {
   return filename.split('.')[0];
 };
 
-// Helper function to validate booking and guest using email
-const validateBookingAndGuest = async (bookingId, guestIndex, userEmail) => {
-  console.log('Validation params:', { bookingId, guestIndex, userEmail });
-  
+// Helper function to validate booking and guest
+const validateBookingAndGuest = async (bookingId, guestId, userEmail) => {
   try {
-    // First find the user by email to get userId
+    // Find user by email
     const user = await User.findOne({ email: userEmail });
     if (!user) {
-      console.log('User not found with email:', userEmail);
-      return { error: "User not found", status: 404 };  
+      return { error: "User not found", status: 404 };
     }
-    
-    console.log('User found:', user._id);
-    
-    // Find booking using userId
-    const booking = await Booking.findOne({ 
-      _id: bookingId, 
-      userId: user._id 
+
+    // Find booking that belongs to this user
+    const booking = await Booking.findOne({
+      _id: bookingId,
+      userId: user._id
     });
 
     if (!booking) {
-      console.log('Booking not found:', { bookingId, userId: user._id });
       return { error: "Booking not found", status: 404 };
     }
 
-    console.log('Booking found with guests:', booking.guests.length);
-
-    if (guestIndex < 0 || guestIndex >= booking.guests.length) {
-      console.log('Invalid guest index:', { guestIndex, totalGuests: booking.guests.length });
-      return { error: "Invalid guest index", status: 400 };
+    // Find guest and verify it belongs to the booking
+    const guest = await Guest.findById(guestId);
+    if (!guest) {
+      return { error: "Guest not found", status: 404 };
     }
 
-    return { booking, user };
+    // Verify guest is in this booking's guestIds
+    if (!booking.guestIds.includes(guestId)) {
+      return { error: "Guest does not belong to this booking", status: 403 };
+    }
+
+    // Verify guest belongs to this user
+    if (guest.userId.toString() !== user._id.toString()) {
+      return { error: "Unauthorized access to guest", status: 403 };
+    }
+
+    return { booking, guest, user };
   } catch (error) {
     console.error('Validation error:', error);
     return { error: "Database error during validation", status: 500 };
@@ -53,12 +57,8 @@ const validateBookingAndGuest = async (bookingId, guestIndex, userEmail) => {
 // Upload passport document
 exports.uploadPassport = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
-    console.log('Upload passport params:', { bookingId, guestIndex });
-    
-    // Get email from middleware
+    const { bookingId, guestId } = req.params;
     const userEmail = req.user?.email || req.body?.email;
-    console.log('User email from middleware:', userEmail);
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
@@ -68,25 +68,17 @@ exports.uploadPassport = async (req, res) => {
       return res.status(400).json({ message: "No passport file uploaded" });
     }
 
-    console.log('File received:', {
-      filename: req.file.filename,
-      originalname: req.file.originalname,
-      size: req.file.size,
-      fileUrl: req.fileUrl
-    });
-
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
-      console.log('Validation failed:', validation.error);
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     // Check upload limit (max 2 uploads: 1 original + 1 re-upload)
-    const oldPassport = booking.guests[guestIndex].passport;
+    const oldPassport = guest.passport;
     const isReupload = oldPassport && oldPassport.trim() !== "";
-    const previousPassports = booking.guests[guestIndex].previousPassports || [];
+    const previousPassports = guest.previousPassports || [];
 
     if (isReupload && previousPassports.length >= 1) {
       return res.status(400).json({
@@ -96,30 +88,28 @@ exports.uploadPassport = async (req, res) => {
 
     // Archive old passport if exists (keep for records)
     if (isReupload) {
-      console.log('Archiving old passport:', oldPassport);
-      if (!booking.guests[guestIndex].previousPassports) {
-        booking.guests[guestIndex].previousPassports = [];
+      if (!guest.previousPassports) {
+        guest.previousPassports = [];
       }
-      booking.guests[guestIndex].previousPassports.push({
+      guest.previousPassports.push({
         url: oldPassport,
         replacedAt: new Date()
       });
     }
 
     // Update passport URL
-    booking.guests[guestIndex].passport = req.fileUrl;
-    await booking.save();
+    guest.passport = req.fileUrl;
+    await guest.save();
 
-    console.log('Passport uploaded successfully:', req.fileUrl);
-
-    const updatedBooking = await Booking.findById(booking._id)
+    const updatedBooking = await Booking.findById(bookingId)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Passport uploaded successfully",
       passportUrl: req.fileUrl,
-      guest: booking.guests[guestIndex],
+      guest,
       booking: updatedBooking
     });
   } catch (error) {
@@ -131,7 +121,7 @@ exports.uploadPassport = async (req, res) => {
 // Upload travel insurance document
 exports.uploadDocuments = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
+    const { bookingId, guestId } = req.params;
     const userEmail = req.user?.email || req.body?.email;
 
     if (!userEmail) {
@@ -142,15 +132,15 @@ exports.uploadDocuments = async (req, res) => {
       return res.status(400).json({ message: "No travel insurance file uploaded" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     // Delete old insurance from Cloudinary if exists
-    const oldInsurance = booking.guests[guestIndex].travelInsurance;
+    const oldInsurance = guest.travelInsurance;
     if (oldInsurance) {
       const publicId = extractPublicId(oldInsurance);
       if (publicId) {
@@ -158,17 +148,18 @@ exports.uploadDocuments = async (req, res) => {
       }
     }
 
-    booking.guests[guestIndex].travelInsurance = req.fileUrl;
-    await booking.save();
+    guest.travelInsurance = req.fileUrl;
+    await guest.save();
 
-    const updatedBooking = await Booking.findById(booking._id)
+    const updatedBooking = await Booking.findById(bookingId)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Travel insurance uploaded successfully",
       travelInsuranceUrl: req.fileUrl,
-      guest: booking.guests[guestIndex],
+      guest,
       booking: updatedBooking
     });
   } catch (error) {
@@ -180,7 +171,7 @@ exports.uploadDocuments = async (req, res) => {
 // Update medical appointment date / mark as completed
 exports.updateMedicalAppointment = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
+    const { bookingId, guestId } = req.params;
     const { medicalAppointmentDate, medicalAppointmentCompleted } = req.body;
     const userEmail = req.user?.email || req.body?.email;
 
@@ -188,32 +179,32 @@ exports.updateMedicalAppointment = async (req, res) => {
       return res.status(401).json({ message: "User email not found in request" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     if (medicalAppointmentDate !== undefined) {
-      booking.guests[guestIndex].medicalAppointmentDate = medicalAppointmentDate;
-      // Auto-mark as completed when a date is set
-      booking.guests[guestIndex].medicalAppointmentCompleted = true;
+      guest.medicalAppointmentDate = medicalAppointmentDate;
+      guest.medicalAppointmentCompleted = true;
     }
 
     if (medicalAppointmentCompleted !== undefined) {
-      booking.guests[guestIndex].medicalAppointmentCompleted = medicalAppointmentCompleted;
+      guest.medicalAppointmentCompleted = medicalAppointmentCompleted;
     }
 
-    await booking.save();
+    await guest.save();
 
-    const updatedBooking = await Booking.findById(booking._id)
+    const updatedBooking = await Booking.findById(bookingId)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Medical appointment updated successfully",
-      guest: booking.guests[guestIndex],
+      guest,
       booking: updatedBooking
     });
   } catch (error) {
@@ -225,10 +216,10 @@ exports.updateMedicalAppointment = async (req, res) => {
 // Update guest form information
 exports.updateGuestForm = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
-    const { 
-      name, 
-      age, 
+    const { bookingId, guestId } = req.params;
+    const {
+      name,
+      age,
       gender,
       phone,
       country,
@@ -241,69 +232,49 @@ exports.updateGuestForm = async (req, res) => {
       emergencyContactName,
       emergencyContactNumber
     } = req.body;
-    
-    const userEmail = req.user?.email || req.body?.email;
 
-    console.log('Update guest form:', { 
-      bookingId, 
-      guestIndex, 
-      userEmail, 
-      data: { 
-        name, 
-        age, 
-        gender,
-        phone,
-        country,
-        state,
-        address,
-        passportNumber,
-        passportCountry,
-        passportIssuedOn,
-        passportExpiresOn,
-        emergencyContactName,
-        emergencyContactNumber
-      } 
-    });
+    const userEmail = req.user?.email || req.body?.email;
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     // Update guest information - only update fields that are provided
-    if (name !== undefined) booking.guests[guestIndex].name = name;
-    if (age !== undefined) booking.guests[guestIndex].age = age;
-    if (gender !== undefined) booking.guests[guestIndex].gender = gender;
-    if (phone !== undefined) booking.guests[guestIndex].phone = phone;
-    if (country !== undefined) booking.guests[guestIndex].country = country;
-    if (state !== undefined) booking.guests[guestIndex].state = state;
-    if (address !== undefined) booking.guests[guestIndex].address = address;
-    
+    if (name !== undefined) guest.name = name;
+    if (age !== undefined) guest.age = age;
+    if (gender !== undefined) guest.gender = gender;
+    if (phone !== undefined) guest.phone = phone;
+    if (country !== undefined) guest.country = country;
+    if (state !== undefined) guest.state = state;
+    if (address !== undefined) guest.address = address;
+
     // Passport information
-    if (passportNumber !== undefined) booking.guests[guestIndex].passportNumber = passportNumber;
-    if (passportCountry !== undefined) booking.guests[guestIndex].passportCountry = passportCountry;
-    if (passportIssuedOn !== undefined) booking.guests[guestIndex].passportIssuedOn = passportIssuedOn;
-    if (passportExpiresOn !== undefined) booking.guests[guestIndex].passportExpiresOn = passportExpiresOn;
-    
+    if (passportNumber !== undefined) guest.passportNumber = passportNumber;
+    if (passportCountry !== undefined) guest.passportCountry = passportCountry;
+    if (passportIssuedOn !== undefined) guest.passportIssuedOn = passportIssuedOn;
+    if (passportExpiresOn !== undefined) guest.passportExpiresOn = passportExpiresOn;
+
     // Emergency contact
-    if (emergencyContactName !== undefined) booking.guests[guestIndex].emergencyContactName = emergencyContactName;
-    if (emergencyContactNumber !== undefined) booking.guests[guestIndex].emergencyContactNumber = emergencyContactNumber;
+    if (emergencyContactName !== undefined) guest.emergencyContactName = emergencyContactName;
+    if (emergencyContactNumber !== undefined) guest.emergencyContactNumber = emergencyContactNumber;
 
-    await booking.save();
+    await guest.save();
 
-    const updatedBooking = await Booking.findById(booking._id)
+    const updatedBooking = await Booking.findById(bookingId)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Guest information updated successfully",
-      guest: booking.guests[guestIndex],
+      guest,
       booking: updatedBooking
     });
   } catch (error) {
@@ -315,25 +286,23 @@ exports.updateGuestForm = async (req, res) => {
 // Get specific guest information
 exports.getGuest = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
+    const { bookingId, guestId } = req.params;
     const userEmail = req.user?.email || req.body?.email;
-
-    console.log('Get guest:', { bookingId, guestIndex, userEmail });
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     res.status(200).json({
       message: "Guest information retrieved successfully",
-      guest: booking.guests[guestIndex]
+      guest
     });
   } catch (error) {
     console.error("Get guest error:", error);
@@ -347,22 +316,20 @@ exports.getGuests = async (req, res) => {
     const { bookingId } = req.params;
     const userEmail = req.user?.email || req.body?.email;
 
-    console.log('Get guests:', { bookingId, userEmail });
-
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
     }
 
-    // Find user by email first
+    // Find user by email
     const user = await User.findOne({ email: userEmail });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const booking = await Booking.findOne({ 
-      _id: bookingId, 
-      userId: user._id 
-    });
+    const booking = await Booking.findOne({
+      _id: bookingId,
+      userId: user._id
+    }).populate('guestIds');
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -370,8 +337,9 @@ exports.getGuests = async (req, res) => {
 
     res.status(200).json({
       message: "Guests retrieved successfully",
-      guests: booking.guests,
-      totalGuests: booking.guests.length
+      guests: booking.guestIds,
+      totalGuests: booking.guestIds.length,
+      booking
     });
   } catch (error) {
     console.error("Get guests error:", error);
@@ -385,8 +353,6 @@ exports.updateAcknowledge = async (req, res) => {
     const { bookingId } = req.params;
     const { acknowledged } = req.body;
     const userEmail = req.user?.email || req.body?.email;
-
-    console.log('Update acknowledge:', { bookingId, userEmail, acknowledged });
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
@@ -418,7 +384,8 @@ exports.updateAcknowledge = async (req, res) => {
 
     const updatedBooking = await Booking.findById(booking._id)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Acknowledgment status updated successfully",
@@ -464,22 +431,28 @@ exports.addGuests = async (req, res) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    const newGuests = guests.map(g => ({ name: g.name.trim(), age: Number(g.age), registrationPayment: false }));
-    booking.guests.push(...newGuests);
+    // Create new guest documents
+    const newGuestDocs = await Guest.insertMany(
+      guests.map(g => ({
+        userId: user._id,
+        name: g.name.trim(),
+        age: Number(g.age),
+        registrationPayment: false
+      }))
+    );
 
-    // Update registration payment status since new unpaid guests were added
-    if (booking.registrationPaymentDetails && booking.registrationPaymentDetails.status === 'paid') {
-      booking.registrationPaymentDetails.status = 'partial';
-    }
-
+    // Add the new guest IDs to the booking
+    booking.guestIds.push(...newGuestDocs.map(g => g._id));
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
-      message: `${newGuests.length} guest(s) added successfully`,
+      message: `${newGuestDocs.length} guest(s) added successfully`,
+      guests: newGuestDocs,
       booking: updatedBooking
     });
   } catch (error) {
@@ -491,11 +464,9 @@ exports.addGuests = async (req, res) => {
 // Update registration payment status
 exports.updateRegistrationPayment = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
+    const { bookingId, guestId } = req.params;
     const { registrationPayment } = req.body;
     const userEmail = req.user?.email || req.body?.email;
-
-    console.log('Update payment status:', { bookingId, guestIndex, userEmail, registrationPayment });
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
@@ -505,24 +476,25 @@ exports.updateRegistrationPayment = async (req, res) => {
       return res.status(400).json({ message: "Registration payment status must be a boolean value" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { guest } = validation;
 
     // Update registration payment status
-    booking.guests[guestIndex].registrationPayment = registrationPayment;
-    await booking.save();
+    guest.registrationPayment = registrationPayment;
+    await guest.save();
 
-    const updatedBooking = await Booking.findById(booking._id)
+    const updatedBooking = await Booking.findById(bookingId)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
       message: "Registration payment status updated successfully",
-      guest: booking.guests[guestIndex],
+      guest,
       booking: updatedBooking
     });
   } catch (error) {
@@ -534,34 +506,36 @@ exports.updateRegistrationPayment = async (req, res) => {
 // Delete a guest from an existing booking
 exports.deleteGuest = async (req, res) => {
   try {
-    const { bookingId, guestIndex } = req.params;
+    const { bookingId, guestId } = req.params;
     const userEmail = req.user?.email || req.body?.email;
 
     if (!userEmail) {
       return res.status(401).json({ message: "User email not found in request" });
     }
 
-    const validation = await validateBookingAndGuest(bookingId, guestIndex, userEmail);
+    const validation = await validateBookingAndGuest(bookingId, guestId, userEmail);
     if (validation.error) {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { booking } = validation;
+    const { booking, guest } = validation;
 
     // A booking must always have at least one guest
-    if (booking.guests.length <= 1) {
+    if (booking.guestIds.length <= 1) {
       return res.status(400).json({ message: "A booking must have at least one traveler" });
     }
 
-    const [removed] = booking.guests.splice(Number(guestIndex), 1);
+    // Remove guest ID from booking
+    booking.guestIds = booking.guestIds.filter(id => id.toString() !== guestId);
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
       .populate('tripId', 'name destination price image')
-      .populate('userId', 'name email');
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.status(200).json({
-      message: `${removed?.name || "Traveler"} removed successfully`,
+      message: `${guest.name} removed successfully`,
       booking: updatedBooking
     });
   } catch (error) {

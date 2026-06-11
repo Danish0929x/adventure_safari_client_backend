@@ -39,28 +39,6 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    isRegistrationPayment: {
-      type: Boolean,
-      default: false,
-    },
-    isPasswordUpload: {
-      type: Boolean,
-      default: false,
-    },
-    passport: {
-      url: {
-        type: String,
-        default: null,
-      },
-      public_id: {
-        type: String,
-        default: null,
-      },
-      uploaded_at: {
-        type: Date,
-        default: null,
-      }
-    },
     verificationToken: {
       type: String,
       default: null,

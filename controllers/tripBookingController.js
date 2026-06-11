@@ -1,5 +1,32 @@
-const { Booking, Trip } = require("../models/Booking")
+const Booking = require("../models/Booking")
+const Trip = require("../models/Trip")
+const Guest = require("../models/Guest")
 const User = require("../models/User")
+
+// Get existing guests for authenticated user
+exports.getExistingGuests = async (req, res) => {
+  try {
+    const userEmail = req.user?.email || req.body?.email;
+
+    // Check if user exists
+    const user = await User.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get all guests for this user
+    const guests = await Guest.find({ userId: user._id }).sort({ createdAt: -1 });
+
+    res.json({
+      message: "Existing guests retrieved successfully",
+      guests,
+      count: guests.length
+    });
+  } catch (error) {
+    console.error("Get existing guests error:", error);
+    res.status(500).json({ message: "Server error while fetching guests" });
+  }
+};
 
 // Get all trips
 exports.getAllTrips = async (req, res) => {
@@ -39,12 +66,13 @@ exports.getBookingById = async (req, res) => {
     }
 
     // Find booking by ID and ensure it belongs to the requesting user
-    const booking = await Booking.findOne({ 
-      _id: id, 
-      userId: user._id 
+    const booking = await Booking.findOne({
+      _id: id,
+      userId: user._id
     })
       .populate('tripId', 'name destination price image')
       .populate('userId', 'name email')
+      .populate('guestIds')
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found or access denied" })
@@ -69,35 +97,41 @@ exports.getBookingById = async (req, res) => {
 // Create booking
 exports.createBooking = async (req, res) => {
   try {
-    const { tripId, guests, date } = req.body
+    const { tripId, guestIds = [], newGuests = [], date } = req.body
     const userEmail = req.user?.email || req.body?.email
 
     // Validate required fields
-    if (!tripId || !guests || !Array.isArray(guests) || guests.length === 0) {
-      return res.status(400).json({ 
-        message: "Trip ID and at least one guest are required" 
+    if (!tripId) {
+      return res.status(400).json({
+        message: "Trip ID is required"
+      })
+    }
+
+    if ((!guestIds || guestIds.length === 0) && (!newGuests || newGuests.length === 0)) {
+      return res.status(400).json({
+        message: "At least one guest (existing or new) is required"
       })
     }
 
     // Validate date
     if (!date) {
-      return res.status(400).json({ 
-        message: "Booking date is required" 
+      return res.status(400).json({
+        message: "Booking date is required"
       })
     }
 
     const bookingDate = new Date(date)
     if (isNaN(bookingDate.getTime())) {
-      return res.status(400).json({ 
-        message: "Invalid date format" 
+      return res.status(400).json({
+        message: "Invalid date format"
       })
     }
 
-    // Validate guest data
-    for (const guest of guests) {
+    // Validate new guest data
+    for (const guest of newGuests) {
       if (!guest.name || !guest.age || guest.age < 0) {
-        return res.status(400).json({ 
-          message: "Each guest must have a valid name and age" 
+        return res.status(400).json({
+          message: "Each new guest must have a valid name and age"
         })
       }
     }
@@ -116,6 +150,37 @@ exports.createBooking = async (req, res) => {
     const user = await User.findOne({ email: userEmail })
     if (!user) {
       return res.status(404).json({ message: "User not found" })
+    }
+
+    // Validate and collect existing guest IDs
+    const finalGuestIds = [];
+    if (guestIds && guestIds.length > 0) {
+      const existingGuests = await Guest.find({
+        _id: { $in: guestIds },
+        userId: user._id
+      })
+
+      if (existingGuests.length !== guestIds.length) {
+        return res.status(400).json({
+          message: "Some guest IDs are invalid or don't belong to you"
+        })
+      }
+
+      finalGuestIds.push(...guestIds)
+    }
+
+    // Create new guests and collect their IDs
+    if (newGuests && newGuests.length > 0) {
+      const createdGuests = await Guest.insertMany(
+        newGuests.map(g => ({
+          userId: user._id,
+          name: g.name.trim(),
+          age: Number(g.age),
+          registrationPayment: false
+        }))
+      )
+
+      finalGuestIds.push(...createdGuests.map(g => g._id))
     }
 
     // Generate booking ID
@@ -138,21 +203,22 @@ exports.createBooking = async (req, res) => {
 
     const bookingId = generateBookingId(trip.name, bookingDate)
 
-    // Create booking
+    // Create booking with guest IDs
     const booking = new Booking({
       tripId,
       userId: user._id,
       bookingId,
-      guests,
+      guestIds: finalGuestIds,
       bookingDate: bookingDate
     })
 
     await booking.save()
 
-    // Populate trip and user details for response
+    // Populate trip, user, and guest details for response
     const populatedBooking = await Booking.findById(booking._id)
       .populate('tripId', 'name destination price image')
       .populate('userId', 'name email')
+      .populate('guestIds')
 
     res.status(201).json({
       message: "Booking created successfully",
@@ -191,6 +257,7 @@ exports.getAllBookings = async (req, res) => {
     const bookings = await Booking.find(filter)
       .populate('tripId', 'name destination price image')
       .populate('userId', 'name email')
+      .populate('guestIds')
       .sort({ createdAt: -1 })
 
     res.json({

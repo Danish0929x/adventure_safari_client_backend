@@ -1,6 +1,8 @@
 const { client } = require('../config/paypal');
 const paypal = require('@paypal/checkout-server-sdk');
-const {Booking} = require('../models/Booking'); // Adjust path as needed
+const Booking = require('../models/Booking');
+const Guest = require('../models/Guest');
+const { calculateTotalPaid, calculateRegistrationPaymentStatus } = require('../utils/paymentHelper');
 
 // Create PayPal Order
 const createPayPalOrder = async (req, res) => {
@@ -79,47 +81,46 @@ const capturePayPalOrder = async (req, res) => {
 
         // Initialize registrationPaymentDetails if not exists
         if (!booking.registrationPaymentDetails) {
-          booking.registrationPaymentDetails = { transactions: [], totalPaid: 0, status: 'pending' };
+          booking.registrationPaymentDetails = { transactions: [] };
         }
         if (!booking.registrationPaymentDetails.transactions) {
           booking.registrationPaymentDetails.transactions = [];
         }
 
-        // Count unpaid guests being paid in this transaction
-        const unpaidGuests = booking.guests.filter(g => !g.registrationPayment);
-        const guestsPaidNow = unpaidGuests.length;
+        // Get all guests for this booking
+        const guests = await Guest.find({ _id: { $in: booking.guestIds } });
+        const paidGuestIds = booking.registrationPaymentDetails.paidGuestIds || [];
+        const unpaidGuests = guests.filter(g => !paidGuestIds.includes(g._id));
 
-        // Add this transaction
+        // Get first unpaid guest to link to transaction
+        const paidGuestId = unpaidGuests.length > 0 ? unpaidGuests[0]._id : guests[0]._id;
+
+        // Add this transaction with guestId reference
         booking.registrationPaymentDetails.transactions.push({
           transactionId: capture.result.id,
-          paymentDate: new Date(),
+          guestId: paidGuestId,
           amount: capturedAmount,
           currency: capturedCurrency,
+          paymentDate: new Date(),
           payerEmail: capture.result.payer.email_address,
           payerName: `${capture.result.payer.name.given_name} ${capture.result.payer.name.surname}`,
-          guestsPaid: guestsPaidNow
+          status: 'completed'
         });
 
-        // Update total paid
-        booking.registrationPaymentDetails.totalPaid =
-          (booking.registrationPaymentDetails.totalPaid || 0) + capturedAmount;
-
-        // Mark unpaid guests as paid
-        booking.guests.forEach(guest => {
-          if (!guest.registrationPayment) {
-            guest.registrationPayment = true;
+        // Mark unpaid guests as paid for THIS booking only
+        unpaidGuests.forEach(guest => {
+          if (!paidGuestIds.includes(guest._id)) {
+            paidGuestIds.push(guest._id);
           }
         });
-
-        // Update status based on whether all guests are now paid
-        const allPaid = booking.guests.every(g => g.registrationPayment);
-        booking.registrationPaymentDetails.status = allPaid ? 'paid' : 'partial';
+        booking.registrationPaymentDetails.paidGuestIds = paidGuestIds;
 
         await booking.save();
 
         const updatedBooking = await Booking.findById(booking._id)
           .populate('tripId', 'name destination price image')
-          .populate('userId', 'name email');
+          .populate('userId', 'name email')
+          .populate('guestIds');
 
         res.json({
           success: true,
@@ -154,8 +155,12 @@ const capturePayPalOrder = async (req, res) => {
 const getPaymentStatus = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    
-    const booking = await Booking.findById(bookingId).populate('tripId userId');
+
+    const booking = await Booking.findById(bookingId)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email')
+      .populate('guestIds');
+
     if (!booking) {
       return res.status(404).json({
         success: false,
@@ -163,8 +168,10 @@ const getPaymentStatus = async (req, res) => {
       });
     }
 
-    const allGuestsPaid = booking.guests.every(guest => guest.registrationPayment === true);
-    const paidCount = booking.guests.filter(guest => guest.registrationPayment === true).length;
+    const guests = booking.guestIds || [];
+    const allGuestsPaid = guests.length > 0 && guests.every(guest => guest.registrationPayment === true);
+    const paidCount = guests.filter(guest => guest.registrationPayment === true).length;
+    const totalPaid = calculateTotalPaid(booking.registrationPaymentDetails);
 
     res.json({
       success: true,
@@ -172,11 +179,13 @@ const getPaymentStatus = async (req, res) => {
       bookingStatus: booking.bookingStatus,
       paymentStatus: booking.paymentStatus,
       allGuestsPaid,
-      guestCount: booking.guests.length,
+      guestCount: guests.length,
       paidCount,
-      totalAmount: booking.registrationPaymentDetails?.amount || 0,
+      totalPaid,
+      requiredAmount: booking.registrationPaymentDetails?.requiredAmount || 0,
       paymentDetails: booking.registrationPaymentDetails,
-      guests: booking.guests.map(guest => ({
+      guests: guests.map(guest => ({
+        id: guest._id,
         name: guest.name,
         age: guest.age,
         registrationPayment: guest.registrationPayment
@@ -203,7 +212,7 @@ const refundPayment = async (req, res) => {
   try {
     const { bookingId } = req.body;
 
-    const booking = await Booking.findById(bookingId);
+    const booking = await Booking.findById(bookingId).populate('guestIds');
     if (!booking) {
       return res.status(404).json({
         success: false,
@@ -222,19 +231,26 @@ const refundPayment = async (req, res) => {
     // For now, just update the status
     booking.paymentStatus = 'refunded';
     booking.bookingStatus = 'cancelled';
-    
-    // Reset guest payment status
-    booking.guests.forEach(guest => {
-      guest.registrationPayment = false;
-    });
+
+    // Reset guest payment status in their own documents
+    await Guest.updateMany(
+      { _id: { $in: booking.guestIds } },
+      { registrationPayment: false }
+    );
 
     await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email')
+      .populate('guestIds');
 
     res.json({
       success: true,
       message: 'Payment refunded successfully',
       bookingStatus: booking.bookingStatus,
-      paymentStatus: booking.paymentStatus
+      paymentStatus: booking.paymentStatus,
+      booking: updatedBooking
     });
 
   } catch (error) {

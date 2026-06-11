@@ -1,126 +1,5 @@
 const mongoose = require("mongoose");
 
-// Guest Schema
-const guestSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    age: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    gender: {
-      type: String,
-      enum: ["male", "female", "other"],
-    },
-    phone: {
-      type: String,
-      trim: true,
-    },
-    country: {
-      type: String,
-      trim: true,
-    },
-    state: {
-      type: String,
-      trim: true,
-    },
-    address: {
-      type: String,
-      trim: true,
-    },
-    // Passport Information
-    passport: {
-      type: String,
-      trim: true,
-    },
-    passportNumber: {
-      type: String,
-      trim: true,
-    },
-    passportCountry: {
-      type: String,
-      trim: true,
-    },
-    passportIssuedOn: {
-      type: Date,
-    },
-    passportExpiresOn: {
-      type: Date,
-    },
-    // Emergency Contact
-    emergencyContactName: {
-      type: String,
-      trim: true,
-    },
-    emergencyContactNumber: {
-      type: String,
-      trim: true,
-    },
-    // Medical Appointment
-    medicalAppointmentDate: {
-      type: Date,
-    },
-    medicalAppointmentCompleted: {
-      type: Boolean,
-      default: false,
-    },
-    // Documents
-    travelInsurance: {
-      type: String,
-      trim: true,
-    },
-    previousPassports: [{
-      url: String,
-      replacedAt: { type: Date, default: Date.now }
-    }],
-    registrationPayment: {
-      type: Boolean,
-      default: false
-    }
-  },
-  {
-    timestamps: true,
-  }
-);
-
-// Trip Schema
-const tripSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    destination: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-    image: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  {
-    timestamps: true,
-  }
-);
-
 // Booking Schema
 const bookingSchema = new mongoose.Schema(
   {
@@ -142,7 +21,11 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    guests: [guestSchema], // Array of guest subdocuments
+    guestIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Guest",
+      required: true,
+    }],
     bookingStatus: {
       type: String,
       enum: ["pending", "confirmed", "cancelled", "completed"],
@@ -154,21 +37,34 @@ const bookingSchema = new mongoose.Schema(
       default: "pending",
     },
     registrationPaymentDetails: {
+      requiredAmount: {
+        type: Number,
+        default: function() {
+          return (this.guestIds?.length || 0) * 25; // $25 per guest
+        }
+      },
+      paidGuestIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Guest"
+      }],
       transactions: [{
         transactionId: String,
-        paymentDate: { type: Date, default: Date.now },
+        guestId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Guest",
+          required: true
+        },
         amount: Number,
         currency: String,
+        paymentDate: { type: Date, default: Date.now },
         payerEmail: String,
         payerName: String,
-        guestsPaid: Number
-      }],
-      totalPaid: { type: Number, default: 0 },
-      status: {
-        type: String,
-        enum: ["pending", "paid", "partial", "refunded"],
-        default: "pending"
-      }
+        status: {
+          type: String,
+          enum: ["pending", "completed", "failed"],
+          default: "pending"
+        }
+      }]
     },
      acknowledge: {
       type: Boolean,
@@ -181,12 +77,6 @@ const bookingSchema = new mongoose.Schema(
 );
 
 // Export models
-const Guest = mongoose.model("Guest", guestSchema);
-const Trip = mongoose.model("Trip", tripSchema);
 const Booking = mongoose.model("Booking", bookingSchema);
 
-module.exports = {
-  Guest,
-  Trip,
-  Booking,
-};
+module.exports = Booking;
