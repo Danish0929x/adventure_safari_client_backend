@@ -97,8 +97,15 @@ exports.uploadPassport = async (req, res) => {
       });
     }
 
-    // Update passport URL
+    // Update passport URL and set approval status to pending
     guest.passport = req.fileUrl;
+    if (!guest.passportApproval) {
+      guest.passportApproval = {};
+    }
+    guest.passportApproval.status = "pending";
+    guest.passportApproval.approvedAt = null;
+    guest.passportApproval.approvedBy = null;
+    guest.passportApproval.rejectionReason = null;
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
@@ -218,6 +225,7 @@ exports.updateGuestForm = async (req, res) => {
   try {
     const { bookingId, guestId } = req.params;
     const {
+      // Existing fields
       name,
       age,
       gender,
@@ -230,7 +238,33 @@ exports.updateGuestForm = async (req, res) => {
       passportIssuedOn,
       passportExpiresOn,
       emergencyContactName,
-      emergencyContactNumber
+      emergencyContactRelationship,
+      emergencyContactEmail,
+      emergencyContactNumber,
+      emergencyContactAddress,
+      // New fields
+      birthdate,
+      nationality,
+      mailingStreet,
+      mailingCity,
+      mailingState,
+      mailingZip,
+      roomPreference,
+      singleSupplementSignature,
+      singleSupplementAcknowledge,
+      wantShared,
+      roommatePreferences,
+      bagSize,
+      bagColor,
+      bagMonogram,
+      specialOccasionType,
+      specialOccasionDate,
+      specialOccasionComments,
+      tAndCSignature,
+      liabilitySignature,
+      responsibilityInitial,
+      cancellationRefundInitial,
+      copiedFromGuestId
     } = req.body;
 
     const userEmail = req.user?.email || req.body?.email;
@@ -244,9 +278,9 @@ exports.updateGuestForm = async (req, res) => {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { guest } = validation;
+    const { guest, booking } = validation;
 
-    // Update guest information - only update fields that are provided
+    // Update basic guest information
     if (name !== undefined) guest.name = name;
     if (age !== undefined) guest.age = age;
     if (gender !== undefined) guest.gender = gender;
@@ -255,15 +289,113 @@ exports.updateGuestForm = async (req, res) => {
     if (state !== undefined) guest.state = state;
     if (address !== undefined) guest.address = address;
 
-    // Passport information
+    // Update personal details
+    if (birthdate !== undefined) guest.birthdate = birthdate;
+    if (nationality !== undefined) guest.nationality = nationality;
+
+    // Update mailing address
+    if (mailingStreet !== undefined) guest.mailingStreet = mailingStreet;
+    if (mailingCity !== undefined) guest.mailingCity = mailingCity;
+    if (mailingState !== undefined) guest.mailingState = mailingState;
+    if (mailingZip !== undefined) guest.mailingZip = mailingZip;
+
+    // Update passport information
     if (passportNumber !== undefined) guest.passportNumber = passportNumber;
     if (passportCountry !== undefined) guest.passportCountry = passportCountry;
     if (passportIssuedOn !== undefined) guest.passportIssuedOn = passportIssuedOn;
     if (passportExpiresOn !== undefined) guest.passportExpiresOn = passportExpiresOn;
 
-    // Emergency contact
+    // Validate passport 6-month rule if expiration date provided
+    if (passportExpiresOn && booking?.tripId?.endDate) {
+      const expiryDate = new Date(passportExpiresOn);
+      const endDate = new Date(booking.tripId.endDate);
+      const requiredDate = new Date(endDate);
+      requiredDate.setMonth(requiredDate.getMonth() + 6);
+
+      if (!guest.passportValidation) {
+        guest.passportValidation = {};
+      }
+      guest.passportValidation.isValid6Months = expiryDate >= requiredDate;
+      guest.passportValidation.travelEndDate = endDate;
+      guest.passportValidation.requiredExpiryDate = requiredDate;
+      guest.passportValidation.checkedAt = new Date();
+    }
+
+    // Update emergency contact
     if (emergencyContactName !== undefined) guest.emergencyContactName = emergencyContactName;
+    if (emergencyContactRelationship !== undefined) guest.emergencyContactRelationship = emergencyContactRelationship;
+    if (emergencyContactEmail !== undefined) guest.emergencyContactEmail = emergencyContactEmail;
     if (emergencyContactNumber !== undefined) guest.emergencyContactNumber = emergencyContactNumber;
+    if (emergencyContactAddress !== undefined) guest.emergencyContactAddress = emergencyContactAddress;
+
+    // Update room preferences
+    if (roomPreference !== undefined) guest.roomPreference = roomPreference;
+
+    if (singleSupplementSignature !== undefined || roomPreference?.includes('single')) {
+      if (!guest.singleSupplementAcknowledge) {
+        guest.singleSupplementAcknowledge = {};
+      }
+      if (singleSupplementSignature !== undefined) {
+        guest.singleSupplementAcknowledge.signature = singleSupplementSignature;
+        if (singleSupplementSignature && singleSupplementSignature.trim()) {
+          guest.singleSupplementAcknowledge.acknowledged = true;
+          guest.singleSupplementAcknowledge.acknowledgedAt = new Date();
+        }
+      }
+    }
+
+    // Update roommate preference
+    if (wantShared !== undefined || roommatePreferences !== undefined) {
+      if (!guest.roommatePreference) {
+        guest.roommatePreference = {};
+      }
+      if (wantShared !== undefined) guest.roommatePreference.wantShared = wantShared;
+      if (roommatePreferences !== undefined) guest.roommatePreference.preferences = roommatePreferences;
+    }
+
+    // Update travel bag preferences
+    if (bagSize !== undefined || bagColor !== undefined || bagMonogram !== undefined) {
+      if (!guest.travelBag) {
+        guest.travelBag = {};
+      }
+      if (bagSize !== undefined) guest.travelBag.size = bagSize;
+      if (bagColor !== undefined) guest.travelBag.color = bagColor;
+      if (bagMonogram !== undefined) guest.travelBag.monogram = bagMonogram;
+      if (bagSize || bagColor) {
+        guest.travelBag.requestedAt = new Date();
+      }
+    }
+
+    // Update special occasion
+    if (specialOccasionType !== undefined || specialOccasionDate !== undefined || specialOccasionComments !== undefined) {
+      if (!guest.specialOccasion) {
+        guest.specialOccasion = {};
+      }
+      if (specialOccasionType !== undefined) guest.specialOccasion.type = specialOccasionType;
+      if (specialOccasionDate !== undefined) guest.specialOccasion.date = specialOccasionDate;
+      if (specialOccasionComments !== undefined) guest.specialOccasion.comments = specialOccasionComments;
+      if (specialOccasionType && specialOccasionType.trim()) {
+        guest.specialOccasion.notifiedAt = new Date();
+      }
+    }
+
+    // Update legal forms and signatures
+    if (tAndCSignature !== undefined || liabilitySignature !== undefined || responsibilityInitial !== undefined || cancellationRefundInitial !== undefined) {
+      if (!guest.termsAcceptance) {
+        guest.termsAcceptance = {};
+      }
+      if (tAndCSignature !== undefined) guest.termsAcceptance.tAndCSignature = tAndCSignature;
+      if (liabilitySignature !== undefined) guest.termsAcceptance.liabilitySignature = liabilitySignature;
+      if (responsibilityInitial !== undefined) guest.termsAcceptance.responsibilityInitial = responsibilityInitial;
+      if (cancellationRefundInitial !== undefined) guest.termsAcceptance.cancellationRefundInitial = cancellationRefundInitial;
+
+      if (tAndCSignature || liabilitySignature || responsibilityInitial || cancellationRefundInitial) {
+        guest.termsAcceptance.acceptedAt = new Date();
+      }
+    }
+
+    // Track data copy source
+    if (copiedFromGuestId !== undefined) guest.copiedFromGuestId = copiedFromGuestId;
 
     await guest.save();
 
