@@ -179,7 +179,7 @@ exports.uploadDocuments = async (req, res) => {
 exports.updateMedicalAppointment = async (req, res) => {
   try {
     const { bookingId, guestId } = req.params;
-    const { medicalAppointmentDate, medicalAppointmentCompleted } = req.body;
+    const { medicalAppointmentDate, medicalAppointmentCompleted, medicalAppointmentCompletedDate, medicalFollowUpAppointmentDate, healthInfo } = req.body;
     const userEmail = req.user?.email || req.body?.email;
 
     if (!userEmail) {
@@ -200,6 +200,18 @@ exports.updateMedicalAppointment = async (req, res) => {
 
     if (medicalAppointmentCompleted !== undefined) {
       guest.medicalAppointmentCompleted = medicalAppointmentCompleted;
+    }
+
+    if (medicalAppointmentCompletedDate !== undefined) {
+      guest.medicalAppointmentCompletedDate = medicalAppointmentCompletedDate;
+    }
+
+    if (medicalFollowUpAppointmentDate !== undefined) {
+      guest.medicalFollowUpAppointmentDate = medicalFollowUpAppointmentDate;
+    }
+
+    if (healthInfo !== undefined) {
+      guest.healthInfo = healthInfo;
     }
 
     await guest.save();
