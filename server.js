@@ -85,6 +85,7 @@ app.use("/api/guest", require("./routes/guest"));
 app.use("/api/payment", require("./routes/paymentRoutes"));
 app.use("/api/booking", require("./routes/tripBookingRoutes"));
 app.use("/api/inquiry", require("./routes/inquiry"));
+app.use("/api/colors", require("./routes/colorSettingsRoutes"));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
