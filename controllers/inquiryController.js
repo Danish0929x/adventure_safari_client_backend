@@ -1,4 +1,5 @@
 const { sendInquiryEmail } = require("../utils/emailService");
+const Inquiry = require("../models/Inquiry");
 
 // Handle "Inquire Now" form submissions
 exports.createInquiry = async (req, res) => {
@@ -22,6 +23,18 @@ exports.createInquiry = async (req, res) => {
       });
     }
 
+    // Save inquiry to MongoDB
+    const newInquiry = new Inquiry({
+      name,
+      email,
+      phoneNumber,
+      query,
+      status: "new",
+    });
+
+    await newInquiry.save();
+
+    // Send email notification
     await sendInquiryEmail({ name, email, phoneNumber, query });
 
     return res.status(200).json({
