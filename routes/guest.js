@@ -38,6 +38,17 @@ router.put("/acknowledge/:bookingId",
   guestController.updateAcknowledge
 );
 
+router.put("/air-arrangement/:bookingId",
+  auth,
+  guestController.updateAirArrangement
+);
+
+router.put("/air-ticket/:bookingId",
+  auth,
+  uploadSingleDocument('airTicket'),
+  guestController.uploadAirTicket
+);
+
 // 5. ADD GUESTS TO EXISTING BOOKING
 router.post("/add-guests/:bookingId", auth, guestController.addGuests);
 

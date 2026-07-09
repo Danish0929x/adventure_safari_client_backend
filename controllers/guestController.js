@@ -541,6 +541,105 @@ exports.updateAcknowledge = async (req, res) => {
   }
 };
 
+exports.updateAirArrangement = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { arrangedBy } = req.body;
+    const userEmail = req.user?.email || req.body?.email;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "User email not found in request" });
+    }
+
+    if (!["self", "company"].includes(arrangedBy)) {
+      return res.status(400).json({ message: "arrangedBy must be 'self' or 'company'" });
+    }
+
+    const user = await User.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const booking = await Booking.findOne({ _id: bookingId, userId: user._id });
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    if (!booking.airTravel) {
+      booking.airTravel = {};
+    }
+    booking.airTravel.arrangedBy = arrangedBy;
+    await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email')
+      .populate('guestIds');
+
+    res.status(200).json({
+      message: "Air travel arrangement updated successfully",
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error("Update air arrangement error:", error);
+    res.status(500).json({ message: "Server error while updating air travel arrangement" });
+  }
+};
+
+exports.uploadAirTicket = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const userEmail = req.user?.email || req.body?.email;
+
+    if (!userEmail) {
+      return res.status(401).json({ message: "User email not found in request" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No air ticket file uploaded" });
+    }
+
+    const user = await User.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const booking = await Booking.findOne({ _id: bookingId, userId: user._id });
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    if (!booking.airTravel) {
+      booking.airTravel = {};
+    }
+
+    const oldPublicId = booking.airTravel.ticketPublicId;
+    if (oldPublicId) {
+      await deleteCloudinaryFile(oldPublicId);
+    }
+
+    booking.airTravel.ticketUrl = req.fileUrl;
+    booking.airTravel.ticketPublicId = req.fileId;
+    booking.airTravel.uploadedBy = "client";
+    booking.airTravel.uploadedAt = new Date();
+    await booking.save();
+
+    const updatedBooking = await Booking.findById(booking._id)
+      .populate('tripId', 'name destination price image')
+      .populate('userId', 'name email')
+      .populate('guestIds');
+
+    res.status(200).json({
+      message: "Air ticket uploaded successfully",
+      ticketUrl: req.fileUrl,
+      booking: updatedBooking
+    });
+  } catch (error) {
+    console.error("Upload air ticket error:", error);
+    res.status(500).json({ message: "Server error while uploading air ticket" });
+  }
+};
+
 // Add guests to an existing booking
 exports.addGuests = async (req, res) => {
   try {
