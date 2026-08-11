@@ -21,6 +21,11 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    travelKey: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     guestIds: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: "Guest",
