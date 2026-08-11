@@ -7,7 +7,7 @@ const { calculateTotalPaid, calculateRegistrationPaymentStatus } = require('../u
 // Create PayPal Order
 const createPayPalOrder = async (req, res) => {
   try {
-    const { bookingId, amount, currency = 'USD', description } = req.body;
+    const { bookingId, amount, currency = 'USD', description, installmentIndex } = req.body;
 
     // Validate booking exists
     const booking = await Booking.findById(bookingId);
@@ -16,6 +16,21 @@ const createPayPalOrder = async (req, res) => {
         success: false,
         message: 'Booking not found'
       });
+    }
+
+    const isInstallment = installmentIndex !== undefined && installmentIndex !== null;
+    let chargeAmount = amount;
+
+    if (isInstallment) {
+      const installment = booking.finalPayment?.installments?.[installmentIndex];
+      if (!installment) {
+        return res.status(404).json({ success: false, message: 'Installment not found' });
+      }
+      if (installment.status === 'paid') {
+        return res.status(400).json({ success: false, message: 'This installment is already paid' });
+      }
+      // Amount comes from the stored plan, never from the client
+      chargeAmount = installment.amount;
     }
 
     // Force USD currency to avoid currency issues
@@ -28,11 +43,15 @@ const createPayPalOrder = async (req, res) => {
       purchase_units: [{
         amount: {
           currency_code: supportedCurrency, // Use forced currency
-          value: amount.toString()
+          value: chargeAmount.toString()
         },
-        description: description || `Registration Payment for Booking ${booking.bookingId}`,
-        custom_id: `REG_${booking.bookingId}_${Date.now()}`,
-        soft_descriptor: 'Trip Registration'
+        description: description || (isInstallment
+          ? `Installment ${installmentIndex + 1} for Booking ${booking.bookingId}`
+          : `Registration Payment for Booking ${booking.bookingId}`),
+        custom_id: isInstallment
+          ? `INS_${booking.bookingId}_${installmentIndex}_${Date.now()}`
+          : `REG_${booking.bookingId}_${Date.now()}`,
+        soft_descriptor: isInstallment ? 'Trip Installment' : 'Trip Registration'
       }],
       application_context: {
         brand_name: 'Adventure Safari',
@@ -64,7 +83,7 @@ const createPayPalOrder = async (req, res) => {
 // Capture PayPal Order
 const capturePayPalOrder = async (req, res) => {
   try {
-    const { orderId, bookingId } = req.body;
+    const { orderId, bookingId, installmentIndex } = req.body;
 
     const request = new paypal.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
@@ -73,6 +92,39 @@ const capturePayPalOrder = async (req, res) => {
 
     if (capture.result.status === 'COMPLETED') {
       const booking = await Booking.findById(bookingId);
+
+      if (booking && installmentIndex !== undefined && installmentIndex !== null) {
+        const installment = booking.finalPayment?.installments?.[installmentIndex];
+        if (!installment) {
+          return res.status(404).json({ success: false, message: 'Installment not found' });
+        }
+
+        installment.status = 'paid';
+        installment.transactionId = capture.result.id;
+        installment.paidAt = new Date();
+        installment.payerEmail = capture.result.payer.email_address;
+        installment.payerName = `${capture.result.payer.name.given_name} ${capture.result.payer.name.surname}`;
+
+        if (booking.finalPayment.installments.every(i => i.status === 'paid')) {
+          booking.paymentStatus = 'paid';
+        }
+
+        await booking.save();
+
+        const updatedBooking = await Booking.findById(booking._id)
+          .populate('tripId', 'name destination price image')
+          .populate('userId', 'name email')
+          .populate('guestIds');
+
+        return res.json({
+          success: true,
+          message: 'Installment paid successfully',
+          transactionId: capture.result.id,
+          paymentStatus: booking.paymentStatus,
+          booking: updatedBooking
+        });
+      }
+
       if (booking) {
         booking.bookingStatus = 'confirmed';
 

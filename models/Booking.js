@@ -66,6 +66,26 @@ const bookingSchema = new mongoose.Schema(
         }
       }]
     },
+    finalPayment: {
+      installmentsEnabled: {
+        type: Boolean,
+        default: false
+      },
+      totalAmount: Number,
+      installments: [{
+        amount: { type: Number, required: true },
+        dueDate: { type: Date, required: true },
+        status: {
+          type: String,
+          enum: ["pending", "paid"],
+          default: "pending"
+        },
+        transactionId: String,
+        paidAt: Date,
+        payerEmail: String,
+        payerName: String
+      }]
+    },
      acknowledge: {
       type: Boolean,
       default: false
