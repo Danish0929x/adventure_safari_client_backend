@@ -1,5 +1,6 @@
 const express = require("express")
 const auth = require("../middleware/auth")
+const optionalAuth = require("../middleware/optionalAuth")
 const {
   getAllTrips,
   createBooking,
@@ -10,8 +11,9 @@ const {
 
 const router = express.Router()
 
-// Get all trips (public route - no auth required)
-router.get("/trips", getAllTrips)
+// Get all trips (public route - signing in additionally reveals any custom
+// trips assigned to that customer)
+router.get("/trips", optionalAuth, getAllTrips)
 
 // Get existing guests for authenticated user
 router.get("/guests/existing", auth, getExistingGuests)

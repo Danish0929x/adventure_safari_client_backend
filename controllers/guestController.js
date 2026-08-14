@@ -109,7 +109,7 @@ exports.uploadPassport = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -159,7 +159,7 @@ exports.uploadDocuments = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -217,7 +217,7 @@ exports.updateMedicalAppointment = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -412,7 +412,7 @@ exports.updateGuestForm = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -527,7 +527,7 @@ exports.updateAcknowledge = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -572,7 +572,7 @@ exports.updateAirArrangement = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -625,7 +625,7 @@ exports.uploadAirTicket = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -689,7 +689,7 @@ exports.addGuests = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -731,7 +731,7 @@ exports.updateRegistrationPayment = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -773,7 +773,7 @@ exports.deleteGuest = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 

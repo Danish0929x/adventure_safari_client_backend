@@ -20,6 +20,23 @@ const tripSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // Link to the Wetu itinerary for this trip
+    wetuLink: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    // Custom trips are built by an admin for one specific customer and are
+    // kept out of the public trip catalogue.
+    isCustom: {
+      type: Boolean,
+      default: false,
+    },
+    assignedUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,

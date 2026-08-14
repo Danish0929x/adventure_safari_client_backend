@@ -112,7 +112,7 @@ const capturePayPalOrder = async (req, res) => {
         await booking.save();
 
         const updatedBooking = await Booking.findById(booking._id)
-          .populate('tripId', 'name destination price image')
+          .populate('tripId', 'name destination price image wetuLink')
           .populate('userId', 'name email')
           .populate('guestIds');
 
@@ -170,7 +170,7 @@ const capturePayPalOrder = async (req, res) => {
         await booking.save();
 
         const updatedBooking = await Booking.findById(booking._id)
-          .populate('tripId', 'name destination price image')
+          .populate('tripId', 'name destination price image wetuLink')
           .populate('userId', 'name email')
           .populate('guestIds');
 
@@ -209,7 +209,7 @@ const getPaymentStatus = async (req, res) => {
     const { bookingId } = req.params;
 
     const booking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -293,7 +293,7 @@ const refundPayment = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds');
 

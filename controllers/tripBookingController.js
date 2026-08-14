@@ -32,14 +32,31 @@ exports.getExistingGuests = async (req, res) => {
 exports.getAllTrips = async (req, res) => {
   try {
     const { isActive } = req.query
-    
+
     // Build filter object
     let filter = {}
     if (isActive !== undefined) {
       filter.isActive = isActive === 'true'
     }
 
-    const trips = await Trip.find(filter).sort({ createdAt: -1 })
+    // Custom trips are built by an admin for one specific customer, so they
+    // stay out of the public catalogue and are only visible to that customer.
+    let customTripFilter = { isCustom: { $ne: true } }
+
+    const requestingUserEmail = req.user?.email
+    if (requestingUserEmail) {
+      const user = await User.findOne({ email: requestingUserEmail })
+      if (user) {
+        customTripFilter = {
+          $or: [
+            { isCustom: { $ne: true } },
+            { isCustom: true, assignedUserId: user._id }
+          ]
+        }
+      }
+    }
+
+    const trips = await Trip.find({ ...filter, ...customTripFilter }).sort({ createdAt: -1 })
 
     res.json({
       message: "Trips retrieved successfully",
@@ -70,7 +87,7 @@ exports.getBookingById = async (req, res) => {
       _id: id,
       userId: user._id
     })
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -152,6 +169,11 @@ exports.createBooking = async (req, res) => {
       return res.status(404).json({ message: "User not found" })
     }
 
+    // A custom trip belongs to one customer and cannot be booked by anyone else
+    if (trip.isCustom && String(trip.assignedUserId) !== String(user._id)) {
+      return res.status(403).json({ message: "This trip is not available for booking" })
+    }
+
     // Validate and collect existing guest IDs
     const finalGuestIds = [];
     if (guestIds && guestIds.length > 0) {
@@ -216,7 +238,7 @@ exports.createBooking = async (req, res) => {
 
     // Populate trip, user, and guest details for response
     const populatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -255,7 +277,7 @@ exports.getAllBookings = async (req, res) => {
     }
 
     const bookings = await Booking.find(filter)
-      .populate('tripId', 'name destination price image')
+      .populate('tripId', 'name destination price image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
       .sort({ createdAt: -1 })
