@@ -1,5 +1,23 @@
 const mongoose = require("mongoose");
 
+// What one traveller was quoted, frozen at the moment the booking was made.
+// `tripCost` is the declared trip cost that traveller's insurance is written
+// against, so it is stored rather than recomputed — later edits to the trip's
+// price list must not move it.
+const guestPricingSchema = new mongoose.Schema(
+  {
+    guestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Guest",
+      required: true,
+    },
+    tierCode: { type: String, required: true, trim: true },
+    label: { type: String, required: true, trim: true },
+    tripCost: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
 // Booking Schema
 const bookingSchema = new mongoose.Schema(
   {
@@ -31,6 +49,16 @@ const bookingSchema = new mongoose.Schema(
       ref: "Guest",
       required: true,
     }],
+    // Per-traveller trip cost, frozen at booking time. Bookings made before
+    // per-traveller pricing have none, and fall back to trip price x head count.
+    guestPricing: {
+      type: [guestPricingSchema],
+      default: [],
+    },
+    tripTotal: {
+      type: Number,
+      default: 0,
+    },
     bookingStatus: {
       type: String,
       enum: ["pending", "confirmed", "cancelled", "completed"],

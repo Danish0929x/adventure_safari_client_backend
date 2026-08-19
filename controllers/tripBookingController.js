@@ -2,6 +2,7 @@ const Booking = require("../models/Booking")
 const Trip = require("../models/Trip")
 const Guest = require("../models/Guest")
 const User = require("../models/User")
+const { buildGuestPricing } = require("../utils/pricing")
 
 // Get existing guests for authenticated user
 exports.getExistingGuests = async (req, res) => {
@@ -87,7 +88,7 @@ exports.getBookingById = async (req, res) => {
       _id: id,
       userId: user._id
     })
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -114,7 +115,10 @@ exports.getBookingById = async (req, res) => {
 // Create booking
 exports.createBooking = async (req, res) => {
   try {
-    const { tripId, guestIds = [], newGuests = [], date } = req.body
+    // `guestTiers` maps an existing guest id to the traveller type chosen for
+    // them; new guests carry their own `tierCode`. Both are optional — a trip
+    // with a single traveller type resolves without either.
+    const { tripId, guestIds = [], newGuests = [], guestTiers = {}, date } = req.body
     const userEmail = req.user?.email || req.body?.email
 
     // Validate required fields
@@ -176,6 +180,9 @@ exports.createBooking = async (req, res) => {
 
     // Validate and collect existing guest IDs
     const finalGuestIds = [];
+    // Everyone on the booking, in one list, so each can be priced below.
+    const travellers = [];
+
     if (guestIds && guestIds.length > 0) {
       const existingGuests = await Guest.find({
         _id: { $in: guestIds },
@@ -189,9 +196,16 @@ exports.createBooking = async (req, res) => {
       }
 
       finalGuestIds.push(...guestIds)
+      travellers.push(...existingGuests.map(g => ({
+        guestId: g._id,
+        name: g.name,
+        age: g.age,
+        tierCode: guestTiers[String(g._id)]
+      })))
     }
 
     // Create new guests and collect their IDs
+    const createdGuestIds = []
     if (newGuests && newGuests.length > 0) {
       const createdGuests = await Guest.insertMany(
         newGuests.map(g => ({
@@ -203,6 +217,26 @@ exports.createBooking = async (req, res) => {
       )
 
       finalGuestIds.push(...createdGuests.map(g => g._id))
+      createdGuestIds.push(...createdGuests.map(g => g._id))
+      travellers.push(...createdGuests.map((g, i) => ({
+        guestId: g._id,
+        name: g.name,
+        age: g.age,
+        tierCode: newGuests[i]?.tierCode
+      })))
+    }
+
+    // Freeze what each traveller is being charged. This snapshot is the trip
+    // cost their insurance is declared against, so it is stored on the booking
+    // rather than read back off the trip, which the admin may later reprice.
+    let guestPricing
+    let tripTotal
+    try {
+      ({ guestPricing, tripTotal } = buildGuestPricing(trip, travellers))
+    } catch (pricingError) {
+      // The guests just created would otherwise be left orphaned on a failure.
+      await Guest.deleteMany({ _id: { $in: createdGuestIds } })
+      return res.status(400).json({ message: pricingError.message })
     }
 
     // Generate booking ID
@@ -231,6 +265,8 @@ exports.createBooking = async (req, res) => {
       userId: user._id,
       bookingId,
       guestIds: finalGuestIds,
+      guestPricing,
+      tripTotal,
       bookingDate: bookingDate
     })
 
@@ -238,7 +274,7 @@ exports.createBooking = async (req, res) => {
 
     // Populate trip, user, and guest details for response
     const populatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -277,7 +313,7 @@ exports.getAllBookings = async (req, res) => {
     }
 
     const bookings = await Booking.find(filter)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink')
       .populate('userId', 'name email')
       .populate('guestIds')
       .sort({ createdAt: -1 })
