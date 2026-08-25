@@ -148,11 +148,18 @@ exports.createBooking = async (req, res) => {
       })
     }
 
-    // Validate new guest data
+    // Validate new guest data. The client asks for a birthdate and sends the age
+    // it resolves to on the trip's first day, so age 0 is a legitimate value here.
     for (const guest of newGuests) {
-      if (!guest.name || !guest.age || guest.age < 0) {
+      const guestAge = Number(guest.age)
+      if (!guest.name || !Number.isFinite(guestAge) || guestAge < 0 || guestAge > 120) {
         return res.status(400).json({
-          message: "Each new guest must have a valid name and age"
+          message: "Each new guest must have a valid name and birthdate"
+        })
+      }
+      if (guest.birthdate && isNaN(new Date(guest.birthdate).getTime())) {
+        return res.status(400).json({
+          message: "Each new guest must have a valid birthdate"
         })
       }
     }
@@ -212,6 +219,7 @@ exports.createBooking = async (req, res) => {
           userId: user._id,
           name: g.name.trim(),
           age: Number(g.age),
+          ...(g.birthdate ? { birthdate: new Date(g.birthdate) } : {}),
           registrationPayment: false
         }))
       )
