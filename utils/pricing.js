@@ -90,6 +90,18 @@ function derivePriceFromTiers(tiers, fallback = 0) {
   return tiers.reduce((lowest, tier) => Math.min(lowest, tier.amount), Infinity);
 }
 
+// A trip counts as priced once it has at least one traveller type, or a flat
+// price from before traveller types existed. A custom trip may sit unpriced
+// while its quote is being settled; nothing may be booked against it until
+// then, because the amount frozen here is what insurance is declared against
+// and a missing price would silently freeze $0.
+function isTripPriced(trip) {
+  if (trip?.pricing?.length) {
+    return trip.pricing.some((tier) => Number(tier.amount) > 0);
+  }
+  return Number(trip?.price) > 0;
+}
+
 // Trips created before per-traveller pricing carry a single flat price. Reading
 // that back as a one-entry list keeps every caller below on one code path.
 function resolveTiers(trip) {
@@ -156,6 +168,12 @@ function resolveTierForGuest(tiers, guest) {
 // Freezes what each traveller is being charged onto the booking.
 // `guests` is [{ guestId, name, age, tierCode }].
 function buildGuestPricing(trip, guests) {
+  if (!isTripPriced(trip)) {
+    throw new Error(
+      `"${trip?.name || "This trip"}" has no price yet, so it cannot be booked. Set its price first.`
+    );
+  }
+
   const tiers = resolveTiers(trip);
 
   const guestPricing = guests.map((guest) => {
@@ -194,6 +212,7 @@ module.exports = {
   LEGACY_TIER_LABEL,
   normalizePricingTiers,
   derivePriceFromTiers,
+  isTripPriced,
   resolveTiers,
   findTierForAge,
   resolveTierForGuest,

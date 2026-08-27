@@ -159,7 +159,10 @@ const guestSchema = new mongoose.Schema(
     },
     previousPassports: [{
       url: String,
-      replacedAt: { type: Date, default: Date.now }
+      replacedAt: { type: Date, default: Date.now },
+      // A passport replaced because an admin rejected it does not count against
+      // the traveller's one allowed re-upload — they were told to send another.
+      wasRejected: { type: Boolean, default: false }
     }],
     // Room Preferences
     roomPreference: {

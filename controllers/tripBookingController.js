@@ -3,6 +3,9 @@ const Trip = require("../models/Trip")
 const Guest = require("../models/Guest")
 const User = require("../models/User")
 const { buildGuestPricing } = require("../utils/pricing")
+const { buildBookingReference } = require("../utils/reference")
+const { isAssignedTo } = require("../utils/assignment")
+const { hasTripEnded } = require("../utils/schedule")
 
 // Get existing guests for authenticated user
 exports.getExistingGuests = async (req, res) => {
@@ -42,15 +45,22 @@ exports.getAllTrips = async (req, res) => {
 
     // Custom trips are built by an admin for one specific customer, so they
     // stay out of the public catalogue and are only visible to that customer.
+    // An archived trip is out of circulation — it stays in the database for the
+    // bookings that point at it, but no customer sees it again.
+    filter.isArchived = { $ne: true }
+
     let customTripFilter = { isCustom: { $ne: true } }
 
     const requestingUserEmail = req.user?.email
     if (requestingUserEmail) {
       const user = await User.findOne({ email: requestingUserEmail })
       if (user) {
+        // A custom trip may be shared by several customers, so match either the
+        // list or the single field trips assigned before the list existed.
         customTripFilter = {
           $or: [
             { isCustom: { $ne: true } },
+            { isCustom: true, assignedUserIds: user._id },
             { isCustom: true, assignedUserId: user._id }
           ]
         }
@@ -174,14 +184,26 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: "Trip is not available for booking" })
     }
 
+    // The sweep that retires finished trips runs periodically, so a trip that
+    // ended overnight can still be flagged active for a few hours. Check the
+    // date directly rather than trusting isActive alone.
+    if (trip.isArchived) {
+      return res.status(400).json({ message: "This trip is no longer available" })
+    }
+
+    if (hasTripEnded(trip)) {
+      return res.status(400).json({ message: "This trip has already finished" })
+    }
+
     // Check if user exists
     const user = await User.findOne({ email: userEmail })
     if (!user) {
       return res.status(404).json({ message: "User not found" })
     }
 
-    // A custom trip belongs to one customer and cannot be booked by anyone else
-    if (trip.isCustom && String(trip.assignedUserId) !== String(user._id)) {
+    // A custom trip is bookable only by the customers it was sent to. Several
+    // may share it — each books separately and gets their own booking number.
+    if (trip.isCustom && !isAssignedTo(trip, user._id)) {
       return res.status(403).json({ message: "This trip is not available for booking" })
     }
 
@@ -247,25 +269,9 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: pricingError.message })
     }
 
-    // Generate booking ID
-    const generateBookingId = (safariName, bookingDate) => {
-      // Clean safari name: remove spaces, convert to uppercase, take first 3-4 chars
-      const cleanSafariName = safariName
-        .replace(/[^a-zA-Z0-9]/g, '') // Remove special characters
-        .toUpperCase()
-        .substring(0, 4) // Take first 4 characters
-        .padEnd(3, 'X') // Ensure at least 3 characters, pad with 'X' if needed
-
-      // Format date as YYYYMMDD
-      const formattedDate = bookingDate.toISOString().slice(0, 10).replace(/-/g, '')
-
-      // Generate 5-digit random number
-      const randomNumber = Math.floor(10000 + Math.random() * 90000)
-
-      return `${cleanSafariName}-${formattedDate}-${randomNumber}`
-    }
-
-    const bookingId = generateBookingId(trip.name, bookingDate)
+    // Catalogue and custom trips are referenced identically — one generator,
+    // no branch on isCustom.
+    const bookingId = buildBookingReference(trip, bookingDate)
 
     // Create booking with guest IDs
     const booking = new Booking({

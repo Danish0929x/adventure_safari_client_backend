@@ -80,7 +80,13 @@ exports.uploadPassport = async (req, res) => {
     const isReupload = oldPassport && oldPassport.trim() !== "";
     const previousPassports = guest.previousPassports || [];
 
-    if (isReupload && previousPassports.length >= 1) {
+    // A rejected passport is being replaced at the admin's own request, so it
+    // does not consume the traveller's one allowed re-upload — otherwise a
+    // rejection could lock them out of ever satisfying it.
+    const wasRejected = guest.passportApproval?.status === "rejected";
+    const voluntaryReuploads = previousPassports.filter((entry) => !entry.wasRejected).length;
+
+    if (isReupload && !wasRejected && voluntaryReuploads >= 1) {
       return res.status(400).json({
         message: "Passport upload limit reached. You can only update your passport once."
       });
@@ -93,7 +99,8 @@ exports.uploadPassport = async (req, res) => {
       }
       guest.previousPassports.push({
         url: oldPassport,
-        replacedAt: new Date()
+        replacedAt: new Date(),
+        wasRejected
       });
     }
 

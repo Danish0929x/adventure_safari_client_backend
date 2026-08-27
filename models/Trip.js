@@ -25,9 +25,19 @@ const tripSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    // A catalogue trip always carries a figure. A custom trip is quoted for one
+    // customer and is often built before that quote is settled, so it may be
+    // saved unpriced and priced later — `null` until then, never 0, which would
+    // read as free.
     price: {
       type: Number,
-      required: true,
+      default: null,
+      required: [
+        function () {
+          return !this.isCustom;
+        },
+        "A catalog trip needs a price",
+      ],
     },
     // Trips are quoted per traveller type. `price` above stays as the cheapest
     // of these, so the catalogue can keep showing a single "from" figure.
@@ -51,14 +61,46 @@ const tripSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // The customers this trip was sent to. Two couples on the same safari each
+    // book separately, so several customers can share one custom trip.
+    assignedUserIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    // Superseded by assignedUserIds, and kept only so trips assigned before
+    // several customers were supported keep working. Mirrors the first entry
+    // above. Read it through resolveAssignedUserIds(), never directly.
     assignedUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
     },
+    // When the trip runs. Both are optional: a catalogue trip with no dates is
+    // an evergreen product that never retires on its own. A trip that does
+    // carry an end date is deactivated automatically the day after it ends.
+    startDate: {
+      type: Date,
+      default: null,
+    },
+    endDate: {
+      type: Date,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // A trip is archived a month after it ends: out of the working list, but
+    // never deleted, because bookings still point at it.
+    isArchived: {
+      type: Boolean,
+      default: false,
+    },
+    archivedAt: {
+      type: Date,
+      default: null,
     }
   },
   {
