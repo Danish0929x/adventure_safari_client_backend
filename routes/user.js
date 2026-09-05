@@ -17,4 +17,7 @@ router.put("/change-password", auth, userController.changePassword)
 // Delete user account
 router.delete("/delete-account", auth, userController.deleteUserAccount)
 
+// Get invited trips
+router.get("/invited-trips", auth, userController.getInvitedTrips)
+
 module.exports = router

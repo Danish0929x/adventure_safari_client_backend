@@ -4,11 +4,12 @@ const speakeasy = require("speakeasy");
 const qrcode = require("qrcode");
 const User = require("../models/User");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../utils/emailService");
+const invitationService = require("../services/invitationService");
 
 // Register user
 exports.register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, invitationToken } = req.body;
 
     // Validate input
     if (!name || !email || !password) {
@@ -56,13 +57,46 @@ exports.register = async (req, res) => {
       return res.status(500).json({ message: "Failed to send verification email. Please try again." });
     }
 
+    // Handle invitation acceptance if token provided
+    let invitationData = null;
+    if (invitationToken) {
+      try {
+        invitationData = await invitationService.acceptInvitation(invitationToken, user._id);
+      } catch (invitationError) {
+        console.warn("Invitation processing warning:", invitationError.message);
+        // Don't fail registration if invitation fails - it's optional
+      }
+    }
+
     res.status(201).json({
       message: "User registered successfully. Please check your email to verify your account.",
       userId: user._id,
+      invitation: invitationData ? {
+        tripName: invitationData.tripId?.name,
+        status: "will be available after email verification"
+      } : null
     });
   } catch (error) {
     console.error("Registration error:", error);
     res.status(500).json({ message: "Server error during registration" });
+  }
+};
+
+// Looks up an invitation so the register form can name the trip and pre-fill
+// the address it was sent to. Public by necessity — the caller has no account
+// yet — so it returns only what the invitation email already told them.
+exports.getInvitation = async (req, res) => {
+  try {
+    const invitation = await invitationService.getByToken(req.params.token);
+
+    res.json({
+      email: invitation.email,
+      tripName: invitation.tripId?.name || null,
+    });
+  } catch (error) {
+    // getByToken throws for missing, used, and expired alike; the form only
+    // needs to know it cannot pre-fill.
+    res.status(404).json({ message: error.message });
   }
 };
 
@@ -115,10 +149,25 @@ exports.verifyEmail = async (req, res) => {
     user.verificationToken = null;
     await user.save();
 
+    // Check for pending invitations
+    let invitedTrips = [];
+    try {
+      const pendingInvitations = await invitationService.getPendingByEmail(user.email);
+      if (pendingInvitations.length > 0) {
+        invitedTrips = pendingInvitations.map(inv => ({
+          tripName: inv.tripId?.name,
+          tripId: inv.tripId?._id
+        }));
+      }
+    } catch (invError) {
+      console.warn("Error checking invitations:", invError.message);
+    }
+
     console.log('Successfully verified user:', user.email);
-    return res.json({ 
+    return res.json({
       message: "Email verified successfully. You can now login to your account.",
-      email: user.email
+      email: user.email,
+      invitedTrips: invitedTrips.length > 0 ? invitedTrips : null
     });
 
   } catch (error) {

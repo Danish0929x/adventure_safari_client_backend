@@ -5,6 +5,7 @@ const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/auth');
 
 // Existing auth routes
+router.get("/invitation/:token", authController.getInvitation);
 router.post('/register', authController.register);
 router.get("/verify-email/:token", authController.verifyEmail);
 router.post('/login', authController.login);

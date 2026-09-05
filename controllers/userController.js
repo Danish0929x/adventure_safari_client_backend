@@ -4,6 +4,7 @@ const crypto = require("crypto")
 const bcrypt = require("bcryptjs")
 const { sendVerificationEmail } = require("../utils/emailService")
 const { cloudinary } = require("../config/cloudinary")
+const invitationService = require("../services/invitationService")
 
 // Get user profile
 exports.getProfile = async (req, res) => {
@@ -148,5 +149,34 @@ exports.deleteUserAccount = async (req, res) => {
   } catch (error) {
     console.error("Delete account error:", error)
     res.status(500).json({ message: "Server error while deleting account" })
+  }
+}
+
+// Get invited trips for user
+exports.getInvitedTrips = async (req, res) => {
+  try {
+    const userId = req.user?._id
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" })
+    }
+
+    const invitedTrips = await invitationService.getUserTrips(userId)
+    res.json({
+      message: "Invited trips retrieved successfully",
+      trips: invitedTrips.map(inv => ({
+        invitationId: inv._id,
+        tripId: inv.tripId?._id,
+        tripName: inv.tripId?.name,
+        destination: inv.tripId?.destination,
+        wetuLink: inv.tripId?.wetuLink,
+        price: inv.tripId?.price,
+        pricing: inv.tripId?.pricing,
+        status: inv.status,
+        acceptedAt: inv.acceptedAt
+      }))
+    })
+  } catch (error) {
+    console.error("Get invited trips error:", error)
+    res.status(500).json({ message: "Server error while fetching invited trips" })
   }
 }
