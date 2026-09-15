@@ -9,12 +9,14 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Emails are read outside this machine, so a missing CLIENT_URL falls back to
+// the live portal rather than to a localhost link the recipient cannot open.
+const CLIENT_URL = (
+  process.env.CLIENT_URL || "https://app.adventuresafarinetwork.com"
+).replace(/\/+$/, "");
+
 const sendVerificationEmail = async (email, token) => {
-  const verificationUrl = `${
-    process.env.CLIENT_URL ||
-    "https://adventure-safari-client-frontend.vercel.app" ||
-    "http://localhost:3000"
-  }/verify-email/${token}`;
+  const verificationUrl = `${CLIENT_URL}/verify-email/${token}`;
 
   const mailOptions = {
     from: {
@@ -99,11 +101,7 @@ const sendVerificationEmail = async (email, token) => {
 };
 
 const sendPasswordResetEmail = async (email, token) => {
-  const resetUrl = `${
-    process.env.CLIENT_URL ||
-    "https://adventure-safari-client-frontend.vercel.app" ||
-    "http://localhost:3000"
-  }/reset-password/${token}`;
+  const resetUrl = `${CLIENT_URL}/reset-password/${token}`;
   // Extract username from email (everything before @)
   const username = email.split("@")[0];
 
