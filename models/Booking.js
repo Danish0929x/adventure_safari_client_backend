@@ -18,6 +18,23 @@ const guestPricingSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Which set of dates this booking is for, frozen at the moment it was made.
+// The trip's departures can be renamed, moved or removed afterwards, and none
+// of that may change the dates someone was already sold — so the booking keeps
+// its own copy rather than pointing at the trip and reading it back later.
+//
+// `departureId` is kept alongside so a booking can still be matched to the
+// departure it came from while that departure exists.
+const departureSnapshotSchema = new mongoose.Schema(
+  {
+    departureId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    name: { type: String, required: true, trim: true },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+  },
+  { _id: false }
+);
+
 // Booking Schema
 const bookingSchema = new mongoose.Schema(
   {
@@ -35,9 +52,18 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // The first day of travel. For a trip with dates this is the chosen
+    // departure's start date, not a date the customer typed — picking those
+    // apart is what `departure` below is for.
     bookingDate: {
       type: Date,
       default: Date.now,
+    },
+    // Null only for an evergreen trip, which has no fixed dates to choose from,
+    // and for bookings made before departures existed.
+    departure: {
+      type: departureSnapshotSchema,
+      default: null,
     },
     travelKey: {
       type: String,

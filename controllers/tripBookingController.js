@@ -6,6 +6,7 @@ const { buildGuestPricing } = require("../utils/pricing")
 const { buildBookingReference } = require("../utils/reference")
 const { isAssignedTo } = require("../utils/assignment")
 const { hasTripEnded } = require("../utils/schedule")
+const { resolveDepartureForBooking, snapshotDeparture } = require("../utils/departures")
 
 // Get existing guests for authenticated user
 exports.getExistingGuests = async (req, res) => {
@@ -128,7 +129,7 @@ exports.createBooking = async (req, res) => {
     // `guestTiers` maps an existing guest id to the traveller type chosen for
     // them; new guests carry their own `tierCode`. Both are optional — a trip
     // with a single traveller type resolves without either.
-    const { tripId, guestIds = [], newGuests = [], guestTiers = {}, date } = req.body
+    const { tripId, guestIds = [], newGuests = [], guestTiers = {}, departureId, date } = req.body
     const userEmail = req.user?.email || req.body?.email
 
     // Validate required fields
@@ -141,20 +142,6 @@ exports.createBooking = async (req, res) => {
     if ((!guestIds || guestIds.length === 0) && (!newGuests || newGuests.length === 0)) {
       return res.status(400).json({
         message: "At least one guest (existing or new) is required"
-      })
-    }
-
-    // Validate date
-    if (!date) {
-      return res.status(400).json({
-        message: "Booking date is required"
-      })
-    }
-
-    const bookingDate = new Date(date)
-    if (isNaN(bookingDate.getTime())) {
-      return res.status(400).json({
-        message: "Invalid date format"
       })
     }
 
@@ -193,6 +180,32 @@ exports.createBooking = async (req, res) => {
 
     if (hasTripEnded(trip)) {
       return res.status(400).json({ message: "This trip has already finished" })
+    }
+
+    // Which dates this booking is for. A trip that runs once resolves without
+    // being asked; one that runs several times has to be told which departure,
+    // because the dates are the product here and guessing sells the wrong one.
+    let departure
+    try {
+      departure = resolveDepartureForBooking(trip, departureId)
+    } catch (departureError) {
+      return res.status(400).json({ message: departureError.message })
+    }
+
+    // Travel starts on the departure's first day. Only an evergreen trip — one
+    // with no dates at all — still takes a date from the customer, because
+    // there is nothing on the trip to take it from.
+    let bookingDate
+    if (departure) {
+      bookingDate = new Date(departure.startDate)
+    } else {
+      if (!date) {
+        return res.status(400).json({ message: "Booking date is required" })
+      }
+      bookingDate = new Date(date)
+      if (isNaN(bookingDate.getTime())) {
+        return res.status(400).json({ message: "Invalid date format" })
+      }
     }
 
     // Check if user exists
@@ -281,7 +294,10 @@ exports.createBooking = async (req, res) => {
       guestIds: finalGuestIds,
       guestPricing,
       tripTotal,
-      bookingDate: bookingDate
+      bookingDate: bookingDate,
+      // Frozen, not a reference: editing the trip's dates later must not move
+      // the dates someone has already booked and paid against.
+      departure: snapshotDeparture(departure)
     })
 
     await booking.save()

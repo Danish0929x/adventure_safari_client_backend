@@ -13,6 +13,18 @@ const pricingTierSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// One run of a trip: the same safari going out on its own set of dates, under a
+// name the customer picks it by ("Batch 1"). Keeps its `_id` — bookings point at
+// the departure they were sold, so the id must survive an edit to the trip.
+const departureSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date, required: true },
+  },
+  { _id: true }
+);
+
 const tripSchema = new mongoose.Schema(
   {
     name: {
@@ -77,9 +89,23 @@ const tripSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
-    // When the trip runs. Both are optional: a catalogue trip with no dates is
-    // an evergreen product that never retires on its own. A trip that does
-    // carry an end date is deactivated automatically the day after it ends.
+    // Every set of dates this trip runs on. A trip that goes out once has a
+    // single departure and the booking form never asks — it just uses those
+    // dates. A trip with several is a choice the customer makes when booking.
+    //
+    // Empty means evergreen: a catalogue product with no fixed dates, which is
+    // how trips behaved before departures existed. Written by the admin app;
+    // read-only here.
+    departures: {
+      type: [departureSchema],
+      default: [],
+    },
+    // The span covering every departure: earliest start, latest end. Derived
+    // from `departures` when the admin app saves the trip.
+    //
+    // Both are optional: a trip with no dates is evergreen and never retires on
+    // its own. A trip that does carry an end date is deactivated automatically
+    // the day after it ends — meaning the day after its *last* departure ends.
     startDate: {
       type: Date,
       default: null,
