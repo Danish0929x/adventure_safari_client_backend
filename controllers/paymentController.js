@@ -18,6 +18,15 @@ const createPayPalOrder = async (req, res) => {
       });
     }
 
+    // Nothing to charge for, and capture later assumes at least one guest to
+    // attribute the payment to. Refused here, before PayPal takes any money.
+    if (!booking.guestIds?.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Add your travelers to this booking before paying'
+      });
+    }
+
     const isInstallment = installmentIndex !== undefined && installmentIndex !== null;
     let chargeAmount = amount;
 
@@ -144,8 +153,18 @@ const capturePayPalOrder = async (req, res) => {
         const paidGuestIds = booking.registrationPaymentDetails.paidGuestIds || [];
         const unpaidGuests = guests.filter(g => !paidGuestIds.includes(g._id));
 
-        // Get first unpaid guest to link to transaction
-        const paidGuestId = unpaidGuests.length > 0 ? unpaidGuests[0]._id : guests[0]._id;
+        // Get first unpaid guest to link to transaction. A transaction must name
+        // a guest, so a booking with none is reported rather than half-recorded
+        // — the capture has already gone through by this point.
+        const paidGuestId = unpaidGuests.length > 0 ? unpaidGuests[0]._id : guests[0]?._id;
+        if (!paidGuestId) {
+          console.error('Captured payment for a booking with no guests:', booking.bookingId, capture.result.id);
+          return res.status(409).json({
+            success: false,
+            message: 'Payment was captured but this booking has no travelers. Contact support with your booking number.',
+            transactionId: capture.result.id
+          });
+        }
 
         // Add this transaction with guestId reference
         booking.registrationPaymentDetails.transactions.push({

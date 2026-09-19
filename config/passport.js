@@ -1,6 +1,7 @@
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const AppleStrategy = require("passport-apple").Strategy;
 const User = require("../models/User");
+const { linkCustomTripsForNewUser } = require("../services/onboardingService");
 
 module.exports = (passport) => {
   // Debug: Log environment variables
@@ -69,6 +70,8 @@ module.exports = (passport) => {
             isVerified: true,
             lastLogin: new Date(),
           });
+
+          await linkCustomTripsForNewUser(user);
 
           return done(null, user);
         } catch (error) {
@@ -209,6 +212,11 @@ module.exports = (passport) => {
             console.log("Creating new Apple user:", newUserData);
             user = await User.create(newUserData);
             console.log("Successfully created new Apple user:", user.email);
+
+            // Apple can withhold the address; a fabricated one matches nothing.
+            if (email) {
+              await linkCustomTripsForNewUser(user);
+            }
 
             return done(null, user);
           } catch (error) {

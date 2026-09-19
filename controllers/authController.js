@@ -5,6 +5,7 @@ const qrcode = require("qrcode");
 const User = require("../models/User");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../utils/emailService");
 const invitationService = require("../services/invitationService");
+const { linkCustomTripsForNewUser } = require("../services/onboardingService");
 
 // Register user
 exports.register = async (req, res) => {
@@ -67,6 +68,8 @@ exports.register = async (req, res) => {
         // Don't fail registration if invitation fails - it's optional
       }
     }
+
+    await linkCustomTripsForNewUser(user);
 
     res.status(201).json({
       message: "User registered successfully. Please check your email to verify your account.",

@@ -282,23 +282,46 @@ exports.createBooking = async (req, res) => {
       return res.status(400).json({ message: pricingError.message })
     }
 
-    // Catalogue and custom trips are referenced identically — one generator,
-    // no branch on isCustom.
-    const bookingId = buildBookingReference(trip, bookingDate)
-
-    // Create booking with guest IDs
-    const booking = new Booking({
+    // A custom trip is booked the moment the admin assigns it, so the customer
+    // may already have an empty booking waiting. Filling it is the whole point —
+    // creating a second one here would split their trip in two.
+    const pendingBooking = await Booking.findOne({
       tripId,
       userId: user._id,
-      bookingId,
-      guestIds: finalGuestIds,
-      guestPricing,
-      tripTotal,
-      bookingDate: bookingDate,
-      // Frozen, not a reference: editing the trip's dates later must not move
-      // the dates someone has already booked and paid against.
-      departure: snapshotDeparture(departure)
+      guestIds: { $size: 0 }
     })
+
+    let booking
+    if (pendingBooking) {
+      pendingBooking.guestIds = finalGuestIds
+      pendingBooking.guestPricing = guestPricing
+      pendingBooking.tripTotal = tripTotal
+      pendingBooking.bookingDate = bookingDate
+      pendingBooking.departure = snapshotDeparture(departure)
+      // A schema default, so it was fixed at 0 when the booking was created and
+      // will not recompute on its own.
+      if (!pendingBooking.registrationPaymentDetails) {
+        pendingBooking.registrationPaymentDetails = { transactions: [] }
+      }
+      pendingBooking.registrationPaymentDetails.requiredAmount = finalGuestIds.length * 25
+      // The reference keeps its original value — the admin may already have quoted it.
+      booking = pendingBooking
+    } else {
+      // Catalogue and custom trips are referenced identically — one generator,
+      // no branch on isCustom.
+      booking = new Booking({
+        tripId,
+        userId: user._id,
+        bookingId: buildBookingReference(trip, bookingDate),
+        guestIds: finalGuestIds,
+        guestPricing,
+        tripTotal,
+        bookingDate: bookingDate,
+        // Frozen, not a reference: editing the trip's dates later must not move
+        // the dates someone has already booked and paid against.
+        departure: snapshotDeparture(departure)
+      })
+    }
 
     await booking.save()
 

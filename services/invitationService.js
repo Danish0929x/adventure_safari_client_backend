@@ -43,6 +43,34 @@ class InvitationService {
     return invitation;
   }
 
+  // The emailed link carries a token, but someone can just as easily type their
+  // address into the register form instead. Both paths have to land them on the
+  // trip, so pending invitations are also matched by email at signup.
+  async acceptPendingByEmail(email, userId) {
+    const invitations = await this.getPendingByEmail(email);
+    const accepted = [];
+
+    for (const invitation of invitations) {
+      if (invitation.isExpired()) continue;
+
+      invitation.status = "accepted";
+      invitation.userId = userId;
+      invitation.acceptedAt = new Date();
+      await invitation.save();
+
+      if (invitation.tripId) {
+        await Trip.updateOne(
+          { _id: invitation.tripId._id || invitation.tripId },
+          { $addToSet: { assignedUserIds: userId } }
+        );
+      }
+
+      accepted.push(invitation);
+    }
+
+    return accepted;
+  }
+
   // Get all accepted invitations for a user
   async getUserTrips(userId) {
     return await Invitation.find({

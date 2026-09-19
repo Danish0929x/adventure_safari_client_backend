@@ -3,6 +3,26 @@ const { deleteCloudinaryFile } = require('../middleware/documentUpload');
 const Booking = require('../models/Booking');
 const Guest = require('../models/Guest');
 const User = require('../models/User');
+const Trip = require('../models/Trip');
+const { resolveTiers, resolveTierForGuest, isTripPriced, sumGuestPricing } = require('../utils/pricing');
+
+const REGISTRATION_FEE_PER_GUEST = 25;
+
+// Every guest on a booking carries a frozen trip cost, so one added or removed
+// later has to be priced or dropped here too — otherwise the booking's total
+// silently stops matching who is actually on it.
+const repriceBooking = (booking, guestPricing, trip) => {
+  booking.guestPricing = guestPricing;
+  booking.tripTotal = guestPricing.length
+    ? sumGuestPricing(guestPricing)
+    : (Number(trip?.price) || 0) * booking.guestIds.length;
+
+  if (!booking.registrationPaymentDetails) {
+    booking.registrationPaymentDetails = { transactions: [] };
+  }
+  booking.registrationPaymentDetails.requiredAmount =
+    booking.guestIds.length * REGISTRATION_FEE_PER_GUEST;
+};
 
 // Helper function to extract Cloudinary public ID from URL
 const extractPublicId = (url) => {
@@ -681,18 +701,62 @@ exports.addGuests = async (req, res) => {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Create new guest documents
+    const trip = await Trip.findById(booking.tripId);
+    if (!trip) {
+      return res.status(404).json({ message: "Trip not found" });
+    }
+
+    if (!isTripPriced(trip)) {
+      return res.status(400).json({
+        message: `"${trip.name}" has no price yet, so travelers cannot be added to it.`
+      });
+    }
+
+    // Priced before the guests are written, so a traveler who cannot be matched
+    // to a type leaves nothing behind.
+    const tiers = resolveTiers(trip);
+    let newPricing;
+    try {
+      newPricing = guests.map(g => ({
+        tier: resolveTierForGuest(tiers, { name: g.name, age: Number(g.age), tierCode: g.tierCode })
+      }));
+    } catch (pricingError) {
+      return res.status(400).json({ message: pricingError.message });
+    }
+
     const newGuestDocs = await Guest.insertMany(
       guests.map(g => ({
         userId: user._id,
         name: g.name.trim(),
         age: Number(g.age),
+        ...(g.birthdate ? { birthdate: new Date(g.birthdate) } : {}),
         registrationPayment: false
       }))
     );
 
-    // Add the new guest IDs to the booking
+    // A booking made before per-traveller pricing has no snapshot to extend.
+    // Half a snapshot would read as the whole booking's cost, so it is left
+    // alone and the legacy price x head count keeps answering for it.
+    const snapshotComplete = booking.guestPricing.length === booking.guestIds.length;
+
     booking.guestIds.push(...newGuestDocs.map(g => g._id));
+
+    repriceBooking(
+      booking,
+      snapshotComplete
+        ? [
+            ...booking.guestPricing,
+            ...newGuestDocs.map((doc, i) => ({
+              guestId: doc._id,
+              tierCode: newPricing[i].tier.code,
+              label: newPricing[i].tier.label,
+              tripCost: newPricing[i].tier.amount
+            }))
+          ]
+        : [],
+      trip
+    );
+
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
@@ -777,6 +841,14 @@ exports.deleteGuest = async (req, res) => {
 
     // Remove guest ID from booking
     booking.guestIds = booking.guestIds.filter(id => id.toString() !== guestId);
+
+    const trip = await Trip.findById(booking.tripId);
+    repriceBooking(
+      booking,
+      booking.guestPricing.filter(row => String(row.guestId) !== guestId),
+      trip
+    );
+
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
