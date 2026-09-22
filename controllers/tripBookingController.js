@@ -99,7 +99,7 @@ exports.getBookingById = async (req, res) => {
       _id: id,
       userId: user._id
     })
-      .populate('tripId', 'name destination price pricing image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -327,7 +327,7 @@ exports.createBooking = async (req, res) => {
 
     // Populate trip, user, and guest details for response
     const populatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price pricing image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds')
 
@@ -366,7 +366,7 @@ exports.getAllBookings = async (req, res) => {
     }
 
     const bookings = await Booking.find(filter)
-      .populate('tripId', 'name destination price pricing image wetuLink')
+      .populate('tripId', 'name destination price pricing image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds')
       .sort({ createdAt: -1 })

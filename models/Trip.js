@@ -114,6 +114,16 @@ const tripSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Owned by the admin app: active, inactive (completed) or voided (never
+    // taken). isActive mirrors status === "active".
+    status: {
+      type: String,
+      enum: ["active", "inactive", "voided"],
+    },
+    voidedAt: {
+      type: Date,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true,

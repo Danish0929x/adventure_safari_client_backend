@@ -2,7 +2,16 @@ const { client } = require('../config/paypal');
 const paypal = require('@paypal/checkout-server-sdk');
 const Booking = require('../models/Booking');
 const Guest = require('../models/Guest');
+const Trip = require('../models/Trip');
 const { calculateTotalPaid, calculateRegistrationPaymentStatus } = require('../utils/paymentHelper');
+
+const TRIP_VOIDED_MESSAGE = 'This trip has been cancelled, so payments are no longer accepted. Please contact us if you have questions.';
+
+const isTripVoided = async (tripId) => {
+  if (!tripId) return false;
+  const trip = await Trip.findById(tripId).select('status').lean();
+  return trip?.status === 'voided';
+};
 
 // Create PayPal Order
 const createPayPalOrder = async (req, res) => {
@@ -16,6 +25,10 @@ const createPayPalOrder = async (req, res) => {
         success: false,
         message: 'Booking not found'
       });
+    }
+
+    if (await isTripVoided(booking.tripId)) {
+      return res.status(400).json({ success: false, message: TRIP_VOIDED_MESSAGE });
     }
 
     // Nothing to charge for, and capture later assumes at least one guest to
@@ -94,6 +107,13 @@ const capturePayPalOrder = async (req, res) => {
   try {
     const { orderId, bookingId, installmentIndex } = req.body;
 
+    // An order created before the trip was voided can still be approved in
+    // PayPal; refusing the capture means no money is taken.
+    const bookingForTrip = await Booking.findById(bookingId).select('tripId').lean();
+    if (bookingForTrip && await isTripVoided(bookingForTrip.tripId)) {
+      return res.status(400).json({ success: false, message: TRIP_VOIDED_MESSAGE });
+    }
+
     const request = new paypal.orders.OrdersCaptureRequest(orderId);
     request.requestBody({});
 
@@ -121,7 +141,7 @@ const capturePayPalOrder = async (req, res) => {
         await booking.save();
 
         const updatedBooking = await Booking.findById(booking._id)
-          .populate('tripId', 'name destination price image wetuLink')
+          .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
           .populate('userId', 'name email')
           .populate('guestIds');
 
@@ -189,7 +209,7 @@ const capturePayPalOrder = async (req, res) => {
         await booking.save();
 
         const updatedBooking = await Booking.findById(booking._id)
-          .populate('tripId', 'name destination price image wetuLink')
+          .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
           .populate('userId', 'name email')
           .populate('guestIds');
 
@@ -228,7 +248,7 @@ const getPaymentStatus = async (req, res) => {
     const { bookingId } = req.params;
 
     const booking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -312,7 +332,7 @@ const refundPayment = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 

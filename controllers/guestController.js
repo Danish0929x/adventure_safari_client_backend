@@ -136,7 +136,7 @@ exports.uploadPassport = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -186,7 +186,7 @@ exports.uploadDocuments = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -244,7 +244,7 @@ exports.updateMedicalAppointment = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -439,7 +439,7 @@ exports.updateGuestForm = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -554,7 +554,7 @@ exports.updateAcknowledge = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -599,7 +599,7 @@ exports.updateAirArrangement = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -652,7 +652,7 @@ exports.uploadAirTicket = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -704,6 +704,10 @@ exports.addGuests = async (req, res) => {
     const trip = await Trip.findById(booking.tripId);
     if (!trip) {
       return res.status(404).json({ message: "Trip not found" });
+    }
+
+    if (trip.status === "voided") {
+      return res.status(400).json({ message: "This trip has been cancelled, so travelers cannot be added to it." });
     }
 
     if (!isTripPriced(trip)) {
@@ -760,7 +764,7 @@ exports.addGuests = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -802,7 +806,7 @@ exports.updateRegistrationPayment = async (req, res) => {
     await guest.save();
 
     const updatedBooking = await Booking.findById(bookingId)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
@@ -852,7 +856,7 @@ exports.deleteGuest = async (req, res) => {
     await booking.save();
 
     const updatedBooking = await Booking.findById(booking._id)
-      .populate('tripId', 'name destination price image wetuLink')
+      .populate('tripId', 'name destination price image wetuLink status isActive startDate endDate')
       .populate('userId', 'name email')
       .populate('guestIds');
 
