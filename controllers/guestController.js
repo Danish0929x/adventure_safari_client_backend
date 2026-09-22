@@ -368,7 +368,7 @@ exports.updateGuestForm = async (req, res) => {
     if (emergencyContactAddress !== undefined) guest.emergencyContactAddress = emergencyContactAddress;
 
     // Update room preferences
-    if (roomPreference !== undefined) guest.roomPreference = roomPreference;
+    if (roomPreference !== undefined) guest.roomPreference = roomPreference || undefined;
 
     if (singleSupplementSignature !== undefined || roomPreference?.includes('single')) {
       if (!guest.singleSupplementAcknowledge) {
@@ -397,7 +397,7 @@ exports.updateGuestForm = async (req, res) => {
       if (!guest.travelBag) {
         guest.travelBag = {};
       }
-      if (bagSize !== undefined) guest.travelBag.size = bagSize;
+      if (bagSize !== undefined) guest.travelBag.size = bagSize || undefined;
       if (bagColor !== undefined) guest.travelBag.color = bagColor;
       if (bagMonogram !== undefined) guest.travelBag.monogram = bagMonogram;
       if (bagSize || bagColor) {
