@@ -19,6 +19,7 @@ app.use(
     origin: function (origin, callback) {
       const allowedOrigins = [
         "https://app.adventuresafarinetwork.com",
+        "http://app.adventuresafarinetwork.com",
         "http://localhost:3000",
         "https://adventure-safari-client-frontend.vercel.app",
         "https://appleid.apple.com", // Add Apple's authentication domain

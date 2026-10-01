@@ -117,40 +117,37 @@ exports.verifyEmail = async (req, res) => {
       });
     }
 
-    // Find user by token with additional checks
-    const user = await User.findOne({ 
-      verificationToken: token,
-      isVerified: false // Only find unverified users
-    });
+    const user = await User.findOne({ verificationToken: token });
 
     if (!user) {
-      console.log('Token not found or user already verified:', token);
-      return res.status(404).json({ 
-        message: "Invalid, expired verification token or already verified",
+      console.log('Token not found:', token);
+      return res.status(404).json({
+        message: "This verification link is invalid or has been replaced by a newer one.",
         code: "INVALID_OR_EXPIRED_TOKEN"
       });
     }
 
-    // Add token expiration check (24 hours)
-    const tokenAge = Date.now() - user.updatedAt.getTime();
-    const maxTokenAge = 24 * 60 * 60 * 1000; // 24 hours
-    
-    if (tokenAge > maxTokenAge) {
-      console.log('Expired token:', token);
-      await User.findByIdAndUpdate(user._id, { 
-        verificationToken: null 
-      });
-      
-      return res.status(410).json({ 
-        message: "Verification token has expired. Please request a new one.",
-        code: "TOKEN_EXPIRED"
-      });
-    }
+    // The token is kept after verification so the link stays valid if it is
+    // opened more than once (mail scanners, double clicks, page refreshes).
+    if (!user.isVerified) {
+      const tokenAge = Date.now() - user.updatedAt.getTime();
+      const maxTokenAge = 24 * 60 * 60 * 1000;
 
-    // Verify the user
-    user.isVerified = true;
-    user.verificationToken = null;
-    await user.save();
+      if (tokenAge > maxTokenAge) {
+        console.log('Expired token:', token);
+        await User.findByIdAndUpdate(user._id, {
+          verificationToken: null
+        });
+
+        return res.status(410).json({
+          message: "Verification token has expired. Please request a new one.",
+          code: "TOKEN_EXPIRED"
+        });
+      }
+
+      user.isVerified = true;
+      await user.save();
+    }
 
     // Check for pending invitations
     let invitedTrips = [];
@@ -205,6 +202,12 @@ exports.login = async (req, res) => {
         message: "Please verify your email before logging in",
         needsVerification: true,
         email: user.email,
+      });
+    }
+
+    if (!user.password && (user.googleId || user.appleId)) {
+      return res.status(400).json({
+        message: `This account was created with ${user.googleId ? "Google" : "Apple"} sign-in. Use that button to log in, or use "Forgot password" to set a password.`,
       });
     }
 
@@ -480,17 +483,22 @@ exports.resendVerification = async (req, res) => {
     }
 
     if (user.isVerified) {
-      return res.status(400).json({ message: "User is already verified" });
+      return res.status(400).json({
+        message: "This email is already verified. You can log in.",
+        code: "ALREADY_VERIFIED"
+      });
     }
 
-    // Generate new verification token
-    const verificationToken = crypto.randomBytes(32).toString("hex");
+    // Reuse the current token so links in earlier emails keep working;
+    // saving restarts its 24 hour window.
+    const verificationToken = user.verificationToken || crypto.randomBytes(32).toString("hex");
     user.verificationToken = verificationToken;
+    user.markModified("verificationToken");
     await user.save();
 
     // Send verification email
     try {
-      await sendVerificationEmail(email, verificationToken);
+      await sendVerificationEmail(user.email, verificationToken);
       res.json({ message: "Verification email sent successfully. Please check your inbox." });
     } catch (emailError) {
       console.error("Error sending verification email:", emailError);
