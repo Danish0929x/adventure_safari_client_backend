@@ -15,16 +15,21 @@ const CLIENT_URL = (
   process.env.CLIENT_URL || "https://app.adventuresafarinetwork.com"
 ).replace(/\/+$/, "");
 
+const logoBanner = `
+  <div style="background-color: #ffffff; padding: 20px; text-align: center;">
+    <img src="${CLIENT_URL}/email-logo.jpg" alt="Adventure Safari Network" width="240" style="display: inline-block; max-width: 100%; height: auto; border: 0;">
+  </div>`;
+
 const sendVerificationEmail = async (email, token) => {
   const verificationUrl = `${CLIENT_URL}/verify-email/${token}`;
 
   const mailOptions = {
     from: {
-      name: "Adventure Safari Account Verification",
+      name: "Adventure Safari Network",
       address: process.env.EMAIL_USER,
     },
     to: email,
-    subject: "Email Verification - Adventure Safari ",
+    subject: "Email Verification - Adventure Safari Network",
     text: `Thank you for registering with Adventure Safari Network! To complete your registration and activate your account, please verify your email address by clicking the link below: ${verificationUrl}`,
     html: `
       <!DOCTYPE html>
@@ -36,10 +41,11 @@ const sendVerificationEmail = async (email, token) => {
       </head>
       <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 0;">
+          ${logoBanner}
           <!-- Header -->
          <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 30px; text-align: center;">
             <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">Adventure Safari Network</h1>
-            <p style="color: rgba(255, 255, 255, 0.95); margin: 5px 0 0; font-size: 16px;">Your Gateway to Adventure safari</p>
+            <p style="color: rgba(255, 255, 255, 0.95); margin: 5px 0 0; font-size: 16px;">Your Gateway to Safari Adventure</p>
           </div>
           
           <!-- Content -->
@@ -107,13 +113,14 @@ const sendPasswordResetEmail = async (email, token) => {
 
   const mailOptions = {
     from: {
-      name: "Adventure Safari",
+      name: "Adventure Safari Network",
       address: process.env.EMAIL_USER,
     },
     to: email,
     subject: "Password Reset - Adventure Safari Network",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        ${logoBanner}
         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);  padding: 20px; border-radius: 5px 5px 0 0;">
           <h1 style="margin: 0; color: white;">Adventure Safari Network</h1>
         </div>
@@ -124,7 +131,7 @@ const sendPasswordResetEmail = async (email, token) => {
           </p>
           
           <p style="font-size: 15px; line-height: 1.6;">
-            We received a request to reset the password for your Adventure Safari account.
+            We received a request to reset the password for your Adventure Safari Network account.
           </p>
           
           <p style="font-size: 15px; line-height: 1.6;">
@@ -151,7 +158,7 @@ const sendPasswordResetEmail = async (email, token) => {
           </div>
           
           <div style="margin-top: 30px; font-size: 14px; color: #7f8c8d;">
-            <p>Thanks,<br>The Adventure Safari Team</p>
+            <p>Thanks,<br>The Adventure Safari Network Team</p>
           </div>
         </div>
         
@@ -177,7 +184,7 @@ const sendInquiryEmail = async ({ name, email, phoneNumber, query }) => {
 
   const mailOptions = {
     from: {
-      name: "Adventure Safari Inquiry",
+      name: "Adventure Safari Network Inquiry",
       address: process.env.EMAIL_USER,
     },
     to: recipient,
@@ -186,6 +193,7 @@ const sendInquiryEmail = async ({ name, email, phoneNumber, query }) => {
     text: `You have received a new inquiry.\n\nName: ${name}\nEmail: ${email}\nPhone: ${phoneNumber}\n\nQuery:\n${query}`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        ${logoBanner}
         <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; border-radius: 5px 5px 0 0;">
           <h1 style="margin: 0; color: white;">Adventure Safari Network</h1>
           <p style="color: rgba(255,255,255,0.95); margin: 5px 0 0; font-size: 15px;">New Inquiry Received</p>

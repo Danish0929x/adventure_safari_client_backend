@@ -39,7 +39,7 @@ exports.createInquiry = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Your inquiry has been sent successfully. We'll get back to you soon!",
+      message: "Your inquiry has been sent to Adventure Safari Network. We'll get back to you soon!",
     });
   } catch (error) {
     console.error("Inquiry submission error:", error.message);

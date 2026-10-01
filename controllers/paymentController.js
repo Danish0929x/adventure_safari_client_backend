@@ -76,7 +76,7 @@ const createPayPalOrder = async (req, res) => {
         soft_descriptor: isInstallment ? 'Trip Installment' : 'Trip Registration'
       }],
       application_context: {
-        brand_name: 'Adventure Safari',
+        brand_name: 'Adventure Safari Network',
         landing_page: 'NO_PREFERENCE',
         user_action: 'PAY_NOW',
         return_url: `${process.env.CLIENT_URL}/payment/success`,

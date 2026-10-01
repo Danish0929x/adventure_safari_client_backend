@@ -325,8 +325,8 @@ exports.generate2FASecret = async (req, res) => {
 
     // Generate secret
     const secret = speakeasy.generateSecret({
-      name: `Adventure Safari (${user.email})`,
-      issuer: 'Adventure Safari'
+      name: `Adventure Safari Network (${user.email})`,
+      issuer: 'Adventure Safari Network'
     });
 
     // Save temporary secret (not activated until verified)
