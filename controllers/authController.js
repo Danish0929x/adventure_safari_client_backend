@@ -6,6 +6,7 @@ const User = require("../models/User");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("../utils/emailService");
 const invitationService = require("../services/invitationService");
 const { linkCustomTripsForNewUser } = require("../services/onboardingService");
+const { isPasswordValid, PASSWORD_REQUIREMENTS_MESSAGE } = require("../utils/passwordPolicy");
 
 // Register user
 exports.register = async (req, res) => {
@@ -23,9 +24,8 @@ exports.register = async (req, res) => {
       return res.status(400).json({ message: "Please provide a valid email address" });
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters long" });
+    if (!isPasswordValid(password)) {
+      return res.status(400).json({ message: PASSWORD_REQUIREMENTS_MESSAGE });
     }
 
     // Check if user already exists
@@ -577,10 +577,10 @@ exports.resetPassword = async (req, res) => {
       });
     }
 
-    if (newPassword.length < 6) {
+    if (!isPasswordValid(newPassword)) {
       return res.status(400).json({ 
         success: false,
-        message: "Password must be at least 6 characters long" 
+        message: PASSWORD_REQUIREMENTS_MESSAGE 
       });
     }
 

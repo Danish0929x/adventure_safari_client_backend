@@ -10,6 +10,7 @@ dotenv.config();
 
 // Initialize Passport configuration
 require("./config/passport")(passport);
+const { scheduleGuestAgeRefresh } = require("./utils/guestAge");
 
 const app = express();
 
@@ -107,7 +108,10 @@ mongoose
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
-  .then(() => console.log("MongoDB connected"))
+  .then(() => {
+    console.log("MongoDB connected");
+    scheduleGuestAgeRefresh();
+  })
   .catch((err) => console.log(err));
 
 const PORT = process.env.PORT || 5000;

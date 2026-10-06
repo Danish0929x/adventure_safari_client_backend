@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { PASSWORD_MIN_LENGTH } = require("../utils/passwordPolicy");
 
 const userSchema = new mongoose.Schema(
   {
@@ -19,7 +20,7 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: false, // Made optional for Google OAuth users
-      minlength: 6,
+      minlength: PASSWORD_MIN_LENGTH,
     },
     googleId: {
       type: String,

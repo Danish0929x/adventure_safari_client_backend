@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs")
 const { sendVerificationEmail } = require("../utils/emailService")
 const { cloudinary } = require("../config/cloudinary")
 const invitationService = require("../services/invitationService")
+const { isPasswordValid, PASSWORD_REQUIREMENTS_MESSAGE } = require("../utils/passwordPolicy")
 
 // Get user profile
 exports.getProfile = async (req, res) => {
@@ -97,8 +98,8 @@ exports.changePassword = async (req, res) => {
       return res.status(400).json({ message: "Please provide current and new password" })
     }
 
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: "New password must be at least 6 characters long" })
+    if (!isPasswordValid(newPassword)) {
+      return res.status(400).json({ message: PASSWORD_REQUIREMENTS_MESSAGE })
     }
 
     const user = await User.findOne({ email: userEmail })

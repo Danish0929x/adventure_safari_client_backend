@@ -5,6 +5,7 @@ const Guest = require('../models/Guest');
 const User = require('../models/User');
 const Trip = require('../models/Trip');
 const { resolveTiers, resolveTierForGuest, isTripPriced, sumGuestPricing } = require('../utils/pricing');
+const { MAX_AGE, ageOnDate, parseBirthdate, tripStartForBooking, currentAgeForBooking } = require('../utils/guestAge');
 
 const REGISTRATION_FEE_PER_GUEST = 25;
 
@@ -319,9 +320,25 @@ exports.updateGuestForm = async (req, res) => {
 
     const { guest, booking } = validation;
 
-    // Update basic guest information
+    // Age is derived from the birthdate whenever there is one; a typed age is only
+    // accepted for guests who have no birthdate on file yet.
+    if (birthdate !== undefined && birthdate !== null && birthdate !== "") {
+      const parsedBirthdate = parseBirthdate(birthdate);
+      if (!parsedBirthdate) {
+        return res.status(400).json({ message: "Birthdate must be a real date no more than 120 years ago and not in the future" });
+      }
+      const trip = await Trip.findById(booking.tripId).select("endDate");
+      guest.birthdate = parsedBirthdate;
+      guest.age = currentAgeForBooking(parsedBirthdate, booking, trip);
+    } else if (age !== undefined && !guest.birthdate) {
+      const typedAge = Number(age);
+      if (!Number.isInteger(typedAge) || typedAge < 0 || typedAge > MAX_AGE) {
+        return res.status(400).json({ message: `Age must be a whole number between 0 and ${MAX_AGE}` });
+      }
+      guest.age = typedAge;
+    }
+
     if (name !== undefined) guest.name = name;
-    if (age !== undefined) guest.age = age;
     if (gender !== undefined) guest.gender = gender;
     if (phone !== undefined) guest.phone = phone;
     if (country !== undefined) guest.country = country;
@@ -329,7 +346,6 @@ exports.updateGuestForm = async (req, res) => {
     if (address !== undefined) guest.address = address;
 
     // Update personal details
-    if (birthdate !== undefined) guest.birthdate = birthdate;
     if (nationality !== undefined) guest.nationality = nationality;
 
     // Update mailing address
@@ -682,13 +698,20 @@ exports.addGuests = async (req, res) => {
       return res.status(400).json({ message: "At least one guest is required" });
     }
 
-    for (const guest of guests) {
-      if (!guest.name || !guest.age) {
-        return res.status(400).json({ message: "Each guest must have a name and age" });
+    const birthdates = [];
+    for (const [index, guest] of guests.entries()) {
+      const who = guest.name?.trim() || `Guest ${index + 1}`;
+      if (!guest.name?.trim()) {
+        return res.status(400).json({ message: `Full name is required for guest ${index + 1}` });
       }
-      if (guest.age < 1 || guest.age > 120) {
-        return res.status(400).json({ message: "Guest age must be between 1 and 120" });
+      if (!guest.birthdate) {
+        return res.status(400).json({ message: `Birthdate is required for ${who}` });
       }
+      const birthdate = parseBirthdate(guest.birthdate);
+      if (!birthdate) {
+        return res.status(400).json({ message: `Birthdate for ${who} must be a real date no more than 120 years ago and not in the future` });
+      }
+      birthdates.push(birthdate);
     }
 
     const user = await User.findOne({ email: userEmail });
@@ -721,19 +744,25 @@ exports.addGuests = async (req, res) => {
     const tiers = resolveTiers(trip);
     let newPricing;
     try {
-      newPricing = guests.map(g => ({
-        tier: resolveTierForGuest(tiers, { name: g.name, age: Number(g.age), tierCode: g.tierCode })
+      // Priced on the age each guest will be on the first day of the trip.
+      const tripStart = tripStartForBooking(booking);
+      newPricing = guests.map((g, i) => ({
+        tier: resolveTierForGuest(tiers, {
+          name: g.name,
+          age: ageOnDate(birthdates[i], tripStart || new Date()),
+          tierCode: g.tierCode
+        })
       }));
     } catch (pricingError) {
       return res.status(400).json({ message: pricingError.message });
     }
 
     const newGuestDocs = await Guest.insertMany(
-      guests.map(g => ({
+      guests.map((g, i) => ({
         userId: user._id,
         name: g.name.trim(),
-        age: Number(g.age),
-        ...(g.birthdate ? { birthdate: new Date(g.birthdate) } : {}),
+        birthdate: birthdates[i],
+        age: currentAgeForBooking(birthdates[i], booking, trip),
         registrationPayment: false
       }))
     );

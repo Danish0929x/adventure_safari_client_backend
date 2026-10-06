@@ -7,6 +7,7 @@ const { buildBookingReference } = require("../utils/reference")
 const { isAssignedTo } = require("../utils/assignment")
 const { hasTripEnded } = require("../utils/schedule")
 const { resolveDepartureForBooking, snapshotDeparture } = require("../utils/departures")
+const { ageOnDate, parseBirthdate, currentAgeForBooking } = require("../utils/guestAge")
 
 // Get existing guests for authenticated user
 exports.getExistingGuests = async (req, res) => {
@@ -145,20 +146,20 @@ exports.createBooking = async (req, res) => {
       })
     }
 
-    // Validate new guest data. The client asks for a birthdate and sends the age
-    // it resolves to on the trip's first day, so age 0 is a legitimate value here.
-    for (const guest of newGuests) {
-      const guestAge = Number(guest.age)
-      if (!guest.name || !Number.isFinite(guestAge) || guestAge < 0 || guestAge > 120) {
+    // Ages are worked out here from each birthdate rather than taken from the client.
+    const newGuestBirthdates = []
+    for (const [index, guest] of newGuests.entries()) {
+      const who = guest.name?.trim() || `Guest ${index + 1}`
+      if (!guest.name?.trim()) {
+        return res.status(400).json({ message: `Full name is required for guest ${index + 1}` })
+      }
+      const birthdate = parseBirthdate(guest.birthdate)
+      if (!birthdate) {
         return res.status(400).json({
-          message: "Each new guest must have a valid name and birthdate"
+          message: `Birthdate for ${who} must be a real date no more than 120 years ago and not in the future`
         })
       }
-      if (guest.birthdate && isNaN(new Date(guest.birthdate).getTime())) {
-        return res.status(400).json({
-          message: "Each new guest must have a valid birthdate"
-        })
-      }
+      newGuestBirthdates.push(birthdate)
     }
 
     // Check if trip exists and is active
@@ -241,7 +242,7 @@ exports.createBooking = async (req, res) => {
       travellers.push(...existingGuests.map(g => ({
         guestId: g._id,
         name: g.name,
-        age: g.age,
+        age: g.birthdate ? ageOnDate(g.birthdate, bookingDate) : g.age,
         tierCode: guestTiers[String(g._id)]
       })))
     }
@@ -250,11 +251,11 @@ exports.createBooking = async (req, res) => {
     const createdGuestIds = []
     if (newGuests && newGuests.length > 0) {
       const createdGuests = await Guest.insertMany(
-        newGuests.map(g => ({
+        newGuests.map((g, i) => ({
           userId: user._id,
           name: g.name.trim(),
-          age: Number(g.age),
-          ...(g.birthdate ? { birthdate: new Date(g.birthdate) } : {}),
+          birthdate: newGuestBirthdates[i],
+          age: currentAgeForBooking(newGuestBirthdates[i], { departure, bookingDate }, trip),
           registrationPayment: false
         }))
       )
@@ -264,7 +265,7 @@ exports.createBooking = async (req, res) => {
       travellers.push(...createdGuests.map((g, i) => ({
         guestId: g._id,
         name: g.name,
-        age: g.age,
+        age: ageOnDate(newGuestBirthdates[i], bookingDate),
         tierCode: newGuests[i]?.tierCode
       })))
     }
