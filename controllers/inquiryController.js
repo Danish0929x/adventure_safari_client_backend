@@ -1,5 +1,6 @@
 const { sendInquiryEmail } = require("../utils/emailService");
 const Inquiry = require("../models/Inquiry");
+const { phoneError } = require("../utils/validation");
 
 // Handle "Inquire Now" form submissions
 exports.createInquiry = async (req, res) => {
@@ -12,6 +13,11 @@ exports.createInquiry = async (req, res) => {
         success: false,
         message: "Name, email, phone number and query are all required",
       });
+    }
+
+    const phoneProblem = phoneError("Phone number", phoneNumber);
+    if (phoneProblem) {
+      return res.status(400).json({ success: false, message: phoneProblem });
     }
 
     // Basic email format validation

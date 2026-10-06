@@ -5,6 +5,7 @@ const Guest = require('../models/Guest');
 const User = require('../models/User');
 const Trip = require('../models/Trip');
 const { resolveTiers, resolveTierForGuest, isTripPriced, sumGuestPricing } = require('../utils/pricing');
+const { ADULT_AGE, phoneError, signatureError } = require('../utils/validation');
 const { MAX_AGE, ageOnDate, parseBirthdate, tripStartForBooking, currentAgeForBooking } = require('../utils/guestAge');
 
 const REGISTRATION_FEE_PER_GUEST = 25;
@@ -318,7 +319,7 @@ exports.updateGuestForm = async (req, res) => {
       return res.status(validation.status).json({ message: validation.error });
     }
 
-    const { guest, booking } = validation;
+    const { guest, booking, user } = validation;
 
     // Age is derived from the birthdate whenever there is one; a typed age is only
     // accepted for guests who have no birthdate on file yet.
@@ -339,6 +340,30 @@ exports.updateGuestForm = async (req, res) => {
     }
 
     if (name !== undefined) guest.name = name;
+
+    const phoneProblem = [
+      ["Phone", phone],
+      ["Emergency contact phone", emergencyContactNumber],
+    ]
+      .filter(([, value]) => value)
+      .map(([label, value]) => phoneError(label, value))
+      .find(Boolean);
+    if (phoneProblem) {
+      return res.status(400).json({ message: phoneProblem });
+    }
+
+    const signerNames = [guest.name, guest.age < ADULT_AGE ? user.name : null];
+    const signatureProblem = [
+      ["Single room supplement signature", singleSupplementSignature],
+      ["Terms and Conditions signature", tAndCSignature],
+      ["Release of Liability signature", liabilitySignature],
+    ]
+      .filter(([, value]) => value && String(value).trim())
+      .map(([label, value]) => signatureError(label, value, signerNames))
+      .find(Boolean);
+    if (signatureProblem) {
+      return res.status(400).json({ message: signatureProblem });
+    }
     if (gender !== undefined) guest.gender = gender;
     if (phone !== undefined) guest.phone = phone;
     if (country !== undefined) guest.country = country;
